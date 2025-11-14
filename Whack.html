@@ -1,1 +1,277 @@
+<!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Whack-A-Mole By Rama</title>
+<style>
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #222;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+    overflow-y: auto;
+    touch-action: none;
+  }
+  #ui { margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  button { padding: 8px 15px; font-size: 16px; border-radius: 6px; border: none; cursor: pointer; }
+  #game {
+    margin-top: 20px; width: 90vw; height: 70vh; background: #444;
+    border-radius: 10px; position: relative; overflow: hidden;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(3, 1fr); gap: 10px; padding: 10px;
+  }
+  .hole { background: #333; border-radius: 10px; position: relative; overflow: hidden; }
+  .mole { width: 100%; height: 100%; border-radius: 10px; cursor: pointer; transform: translateY(100%); transition: transform 0.15s ease-out; }
+</style>
+</head>
+<body>
+<h1>Whack-A-Mole By Rama</h1>
+<div id="ui">
+  <button onclick="startGame('normal')">Normal</button>
+  <button onclick="startGame('endless')">Endless</button>
+  <button onclick="startGame('survival')">Survival</button>
+  <button onclick="startGame('time')">Time Attack</button>
+  <button onclick="startGame('boss')">Boss</button>
+  <button onclick="startGame('frenzy')">Frenzy</button>
+  <button onclick="startGame('double')">Double Mole</button>
+  <button onclick="startGame('multiplayer')">Multiplayer</button>
+  <button onclick="toggleFullscreen()">Fullscreen</button>
+  <button onclick="changeSet()">Ganti Set Gambar</button>
+</div>
+<div id="scoreboard">Score: 0 | P1: 0 | P2: 0</div>
+<div id="game"></div><script>
+let game = document.getElementById('game');
+let scoreboard = document.getElementById('scoreboard');
+let holes = [], lastSpawn = 0, spawnIntervalMs = 900;
+let score = 0, p1 = 0, p2 = 0, mode = 'normal', raf;
+let resourceOK = false;
+let imageSet = 'mole';
 
+function preload() {
+  const img = new Image();
+  img.src = imageSet + '.png';
+  img.onload = () => resourceOK = true;
+  img.onerror = () => resourceOK = false;
+}
+preload();
+
+function changeSet() {
+  const sets = ['mole', 'rabbit', 'monster', 'ghost'];
+  imageSet = sets[(sets.indexOf(imageSet) + 1) % sets.length];
+  preload();
+}
+
+function buildGrid() {
+  game.innerHTML = '';
+  holes = [];
+  for (let i = 0; i < 12; i++) {
+    const h = document.createElement('div');
+    h.className = 'hole';
+    holes.push(h);
+    game.appendChild(h);
+  }
+}
+buildGrid();
+
+function startGame(m) {
+  cancelAnimationFrame(raf);
+  mode = m;
+  score = p1 = p2 = 0;
+  updateScore();
+  buildGrid();
+  lastSpawn = 0;
+  spawnIntervalMs = 900;
+  raf = requestAnimationFrame(loop);
+}
+
+function updateScore() {
+  if (mode === 'multiplayer') scoreboard.textContent = `P1: ${p1} | P2: ${p2}`;
+  else scoreboard.textContent = `Score: ${score}`;
+}
+
+function spawnMole() {
+  let count = (mode === 'double') ? 2 : (mode === 'frenzy') ? 3 : 1;
+
+  for (let i = 0; i < count; i++) {
+    const hole = holes[Math.floor(Math.random() * holes.length)];
+    if (!hole || hole.querySelector('.mole')) continue;
+
+    const m = document.createElement('div');
+    m.className = 'mole';
+
+    if (resourceOK) m.style.background = `url('${imageSet}.png') center/cover`;
+    else m.style.background = '#ffaa00';
+
+    requestAnimationFrame(() => m.style.transform = 'translateY(0%)');
+
+    m.onclick = e => {
+      if (mode === 'multiplayer') {
+        if (e.clientX < window.innerWidth / 2) p1++; else p2++;
+      } else score++;
+      updateScore();
+      m.remove();
+    };
+
+    hole.appendChild(m);
+    setTimeout(() => { if (m.parentNode) m.remove(); }, 700);
+  }
+}
+
+function loop(t) {
+  if (!lastSpawn) lastSpawn = t;
+  if (t - lastSpawn > spawnIntervalMs) {
+    spawnMole();
+    lastSpawn = t;
+  }
+  raf = requestAnimationFrame(loop);
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+}
+</script>
+</body>
+    </html><!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Whack-A-Mole By Rama</title>
+<style>
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #222;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+    overflow-y: auto;
+    touch-action: none;
+  }
+  #ui { margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  button { padding: 8px 15px; font-size: 16px; border-radius: 6px; border: none; cursor: pointer; }
+  #game {
+    margin-top: 20px; width: 90vw; height: 70vh; background: #444;
+    border-radius: 10px; position: relative; overflow: hidden;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(3, 1fr); gap: 10px; padding: 10px;
+  }
+  .hole { background: #333; border-radius: 10px; position: relative; overflow: hidden; }
+  .mole { width: 100%; height: 100%; border-radius: 10px; cursor: pointer; transform: translateY(100%); transition: transform 0.15s ease-out; }
+</style>
+</head>
+<body>
+<h1>Whack-A-Mole By Rama</h1>
+<div id="ui">
+  <button onclick="startGame('normal')">Normal</button>
+  <button onclick="startGame('endless')">Endless</button>
+  <button onclick="startGame('survival')">Survival</button>
+  <button onclick="startGame('time')">Time Attack</button>
+  <button onclick="startGame('boss')">Boss</button>
+  <button onclick="startGame('frenzy')">Frenzy</button>
+  <button onclick="startGame('double')">Double Mole</button>
+  <button onclick="startGame('multiplayer')">Multiplayer</button>
+  <button onclick="toggleFullscreen()">Fullscreen</button>
+  <button onclick="changeSet()">Ganti Set Gambar</button>
+</div>
+<div id="scoreboard">Score: 0 | P1: 0 | P2: 0</div>
+<div id="game"></div><script>
+let game = document.getElementById('game');
+let scoreboard = document.getElementById('scoreboard');
+let holes = [], lastSpawn = 0, spawnIntervalMs = 900;
+let score = 0, p1 = 0, p2 = 0, mode = 'normal', raf;
+let resourceOK = false;
+let imageSet = 'mole';
+
+function preload() {
+  const img = new Image();
+  img.src = imageSet + '.png';
+  img.onload = () => resourceOK = true;
+  img.onerror = () => resourceOK = false;
+}
+preload();
+
+function changeSet() {
+  const sets = ['mole', 'rabbit', 'monster', 'ghost'];
+  imageSet = sets[(sets.indexOf(imageSet) + 1) % sets.length];
+  preload();
+}
+
+function buildGrid() {
+  game.innerHTML = '';
+  holes = [];
+  for (let i = 0; i < 12; i++) {
+    const h = document.createElement('div');
+    h.className = 'hole';
+    holes.push(h);
+    game.appendChild(h);
+  }
+}
+buildGrid();
+
+function startGame(m) {
+  cancelAnimationFrame(raf);
+  mode = m;
+  score = p1 = p2 = 0;
+  updateScore();
+  buildGrid();
+  lastSpawn = 0;
+  spawnIntervalMs = 900;
+  raf = requestAnimationFrame(loop);
+}
+
+function updateScore() {
+  if (mode === 'multiplayer') scoreboard.textContent = `P1: ${p1} | P2: ${p2}`;
+  else scoreboard.textContent = `Score: ${score}`;
+}
+
+function spawnMole() {
+  let count = (mode === 'double') ? 2 : (mode === 'frenzy') ? 3 : 1;
+
+  for (let i = 0; i < count; i++) {
+    const hole = holes[Math.floor(Math.random() * holes.length)];
+    if (!hole || hole.querySelector('.mole')) continue;
+
+    const m = document.createElement('div');
+    m.className = 'mole';
+
+    if (resourceOK) m.style.background = `url('${imageSet}.png') center/cover`;
+    else m.style.background = '#ffaa00';
+
+    requestAnimationFrame(() => m.style.transform = 'translateY(0%)');
+
+    m.onclick = e => {
+      if (mode === 'multiplayer') {
+        if (e.clientX < window.innerWidth / 2) p1++; else p2++;
+      } else score++;
+      updateScore();
+      m.remove();
+    };
+
+    hole.appendChild(m);
+    setTimeout(() => { if (m.parentNode) m.remove(); }, 700);
+  }
+}
+
+function loop(t) {
+  if (!lastSpawn) lastSpawn = t;
+  if (t - lastSpawn > spawnIntervalMs) {
+    spawnMole();
+    lastSpawn = t;
+  }
+  raf = requestAnimationFrame(loop);
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+}
+</script>
+</body>
+  </html>
