@@ -3,15 +3,18 @@ const { Sequelize, DataTypes } = require('sequelize');
 require('dotenv').config();
 
 // ==========================================
-// 1. SETUP DATABASE & PERSISTENCE (RAILWAY)
+// 1. SETUP DATABASE & PERSISTENCE (POSTGRESQL)
 // ==========================================
-const sequelize = new Sequelize({
-    dialect: 'sqlite',
-    // Menggunakan Railway Volume jika ada, jika tidak pakai lokal (untuk testing)
-    storage: process.env.RAILWAY_VOLUME_MOUNT_PATH 
-        ? `${process.env.RAILWAY_VOLUME_MOUNT_PATH}/database.sqlite` 
-        : './database.sqlite',
-    logging: false
+// Railway otomatis menyediakan variabel DATABASE_URL jika PostgreSQL ditambahkan
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
+    dialect: 'postgres',
+    logging: false,
+    dialectOptions: {
+        ssl: {
+            require: true,
+            rejectUnauthorized: false // Wajib untuk koneksi aman ke Railway
+        }
+    }
 });
 
 // Model Database Inventory Pokemon
