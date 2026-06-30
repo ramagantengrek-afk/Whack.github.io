@@ -1,16 +1,18 @@
 {
-  "name": "discord-pokemon-counter-bot",
+  "name": "pokebot-discord",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "Discord bot Pokemon (catch, battle, bag, admin tools) - single file, PostgreSQL, siap deploy Railway.",
+  "main": "bot.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "start": "node index.js"
+    "start": "node bot.js"
   },
   "dependencies": {
-    "@discordjs/rest": "^1.7.0",
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.5",
-    "sequelize": "^6.37.1",
-    "pg": "^8.11.3",
-    "pg-hstore": "^2.3.4"
+    "pg": "^8.11.5"
   }
 }
