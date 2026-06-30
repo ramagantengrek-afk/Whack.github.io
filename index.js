@@ -256,7 +256,13 @@ client.once('ready', async () => {
             .addIntegerOption(o => o.setName('id_pokemon').setDescription('ID Pokémon andalanmu untuk bertarung').setRequired(true)),
 
         // Admin Commands
-        
+        new SlashCommandBuilder().setName('reset-economy').setDescription('👑 [ADMIN] Mereset ekonomi server (Koin/Item/Semua)')
+    .addStringOption(o => o.setName('tipe').setDescription('Pilih apa yang ingin di-reset').setRequired(true)
+        .addChoices({ name: 'Hanya Koin', value: 'coin' }, { name: 'Hanya Item Tas', value: 'items' }, { name: 'Semua (Koin & Item)', value: 'all' }))
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+new SlashCommandBuilder().setName('view-profile').setDescription('👑 [ADMIN] Menginspeksi profil, koin, dan tas pemain lain')
+    .addUserOption(o => o.setName('target').setDescription('Pemain yang ingin diintip').setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
         new SlashCommandBuilder().setName('give-pokemon').setDescription('👑 [ADMIN] Kirim pokemon instan ke bag pemain')
     .addUserOption(o => o.setName('target').setDescription('Pemain yang diberi').setRequired(true))
     .addStringOption(o => o.setName('nama').setDescription('Nama Pokémon (Sesuai DB)').setRequired(true))
@@ -607,6 +613,80 @@ client.on('interactionCreate', async interaction => {
         }
 
         // --- CODE ADMIN-SPAWN ---
+        // ==================== COMMAND: RESET ECONOMY ====================
+if (commandName === 'reset-economy') {
+    const tipeReset = options.getString('tipe');
+    const t = await sequelize.transaction();
+
+    try {
+        if (tipeReset === 'coin' || tipeReset === 'all') {
+            // Set semua koin user di database menjadi 0
+            await Profile.update({ coins: 0 }, { where: {}, transaction: t });
+        }
+        
+        if (tipeReset === 'items' || tipeReset === 'all') {
+            // Kosongkan kolom bagItems/inventory item (sesuaikan dengan struktur DB item kamu)
+            await Profile.update({ bagItems: '{}' }, { where: {}, transaction: t });
+        }
+
+        // Simpan snapshot massal untuk backup
+        const allProfiles = await Profile.findAll({ transaction: t });
+        for (const prof of allProfiles) {
+            await saveSnapshot(prof.userId, prof, t);
+        }
+
+        await t.commit();
+        return interaction.reply({ content: `👑 **ADMIN SUCCESS:** Ekonomi server berhasil di-reset untuk kategori: **${tipeReset.toUpperCase()}**. Seluruh data telah di-backup ke snapshot.`, ephemeral: true });
+    } catch (err) {
+        await t.rollback();
+        console.error(err);
+        return interaction.reply({ content: '❌ Gagal melakukan reset ekonomi karena error internal.', ephemeral: true });
+    }
+}
+
+// ==================== COMMAND: VIEW PROFILE ====================
+if (commandName === 'view-profile') {
+    const targetUser = options.getUser('target');
+    
+    // Ambil data profil (koin, level, dll)
+    const profile = await Profile.findOne({ where: { userId: targetUser.id } });
+    // Ambil jumlah Pokémon di tas milik target
+    const totalPokemon = await Inventory.count({ where: { userId: targetUser.id } });
+
+    if (!profile) {
+        return interaction.reply({ content: `❌ Pemain **${targetUser.username}** belum memiliki data profil di database server ini.`, ephemeral: true });
+    }
+
+    // Parsing item dari tas (jika berupa string JSON di DB)
+    let itemDisplay = "Kosong";
+    if (profile.bagItems) {
+        try {
+            const items = typeof profile.bagItems === 'string' ? JSON.parse(profile.bagItems) : profile.bagItems;
+            const itemKeys = Object.keys(items);
+            if (itemKeys.length > 0) {
+                itemDisplay = itemKeys.map(key => `🎒 **${key}**: ${items[key]}x`).join('\n');
+            }
+        } catch (e) {
+            itemDisplay = "Gagal membaca data item";
+        }
+    }
+
+    // Buat tampilan visual mewah dengan Embed
+    const adminEmbed = new EmbedBuilder()
+        .setTitle(`👑 Admin Inspection: ${targetUser.username}`)
+        .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+        .setColor('#FFD700')
+        .addFields(
+            { name: '🪙 Jumlah Koin', value: `${profile.coins?.toLocaleString('id-ID') || 0} Koin`, inline: true },
+            { name: '⭐ Trainer Rank / Role', value: `${profile.rpgRole || 'Novice Trainer'}`, inline: true },
+            { name: '📊 Total Pokémon di Bag', value: `${totalPokemon} Ekor`, inline: true },
+            { name: '🎒 Isi Tas Item', value: itemDisplay, inline: false }
+        )
+        .setFooter({ text: `ID Pemain: ${targetUser.id}` })
+        .setTimestamp();
+
+    return interaction.reply({ embeds: [adminEmbed], ephemeral: true });
+}
         if (commandName === 'give-pokemon') {
     const targetUser = options.getUser('target');
     const pokeNameInput = options.getString('nama');
