@@ -256,6 +256,11 @@ client.once('ready', async () => {
             .addIntegerOption(o => o.setName('id_pokemon').setDescription('ID Pokémon andalanmu untuk bertarung').setRequired(true)),
 
         // Admin Commands
+        
+        new SlashCommandBuilder().setName('give-pokemon').setDescription('👑 [ADMIN] Kirim pokemon instan ke bag pemain')
+    .addUserOption(o => o.setName('target').setDescription('Pemain yang diberi').setRequired(true))
+    .addStringOption(o => o.setName('nama').setDescription('Nama Pokémon (Sesuai DB)').setRequired(true))
+    .addIntegerOption(o => o.setName('level').setDescription('Level awal Pokémon')).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
         new SlashCommandBuilder().setName('spawn-admin').setDescription('👑 [ADMIN] Tarik paksa entitas Pokémon keluar').addStringOption(o => o.setName('nama').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
         new SlashCommandBuilder().setName('admin-restock').setDescription('👑 [ADMIN] Berikan koin subsidi massal').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
         new SlashCommandBuilder().setName('reset-data').setDescription('👑 [ADMIN] Reset / Rollback presisi data akun pemain')
@@ -602,6 +607,35 @@ client.on('interactionCreate', async interaction => {
         }
 
         // --- CODE ADMIN-SPAWN ---
+        if (commandName === 'give-pokemon') {
+    const targetUser = options.getUser('target');
+    const pokeNameInput = options.getString('nama');
+    const pokeLevel = options.getInteger('level') || 5;
+
+    const match = POKEMON_LIST.find(p => p.toLowerCase() === pokeNameInput.toLowerCase());
+    if (!match) { await t.rollback(); return interaction.reply({ content: '❌ Spesies Pokémon tidak terdaftar di database.', ephemeral: true }); }
+
+    // Buat profil target jika belum ada
+    const targetProfile = await Profile.findOrCreate({ where: { userId: targetUser.id }, transaction: t });
+    
+    // Kirim langsung ke Inventory target
+    const randomNature = Object.keys(NATURES)[Math.floor(Math.random() * Object.keys(NATURES).length)];
+    const isShiny = Math.random() <= 0.08;
+
+    const newPoke = await Inventory.create({ 
+        userId: targetUser.id, 
+        pokemonName: match, 
+        level: pokeLevel, 
+        nature: randomNature, 
+        isShiny 
+    }, { transaction: t });
+
+    // Simpan snapshot history untuk backup/rollback aman
+    await saveSnapshot(targetUser.id, targetProfile[0], t);
+    await t.commit();
+
+    return interaction.reply({ content: `👑 **ADMIN SUCCESS:** Berhasil mengirim **${match}** (Lv. ${pokeLevel}) langsung ke bag milik **${targetUser.username}**. Log save data terenkripsi.`, ephemeral: true });
+        }
         if (commandName === 'spawn-admin') {
             const name = options.getString('nama');
             const match = POKEMON_LIST.find(p => p.toLowerCase() === name.toLowerCase());
