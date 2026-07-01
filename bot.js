@@ -47,12 +47,20 @@ function releaseLock(userId) {
 }
 
 // =========================================================================
-// ⚙️ CHANNELS & VOICE CONFIGURATION ENVIRONMENT
+// ⚙️ CHANNELS & ROLES CONFIGURATION ENVIRONMENT
 // =========================================================================
 const CONFIG_SETUP = {
     SPAWN_CHANNEL_ID: process.env.SPAWN_CHANNEL_ID || 'ID_TEXT_CHANNEL_SPAWN',
+    CLAIM_STARTER_CHANNEL_ID: process.env.CLAIM_STARTER_CHANNEL_ID || 'ID_CHANNEL_CLAIM_STARTER',
     VOICE_COUNTER_CHANNEL_ID: process.env.VOICE_COUNTER_CHANNEL_ID || 'ID_VOICE_CHANNEL_COUNTER',
-    SPAWN_INTERVAL: 20 * 60 * 1000 // ⏱️ TEPAT 20 MENIT
+    SPAWN_INTERVAL: 20 * 60 * 1000, // TEPAT 20 MENIT
+    
+    ROLES: {
+        NOVICE_TRAINER: process.env.ROLE_NOVICE_ID || 'ID_ROLE_NOVICE_TRAINER',
+        GYM_CHALLENGER: process.env.ROLE_GYM_ID || 'ID_ROLE_GYM_CHALLENGER',
+        ELITE_FOUR: process.env.ROLE_ELITE_ID || 'ID_ROLE_ELITE_FOUR',
+        CHAMPION: process.env.ROLE_CHAMPION_ID || 'ID_ROLE_CHAMPION'
+    }
 };
 
 async function updateVoiceCounter(guild) {
@@ -77,7 +85,7 @@ async function updateVoiceCounter(guild) {
 }
 
 // =========================================================================
-// 📋 GAME CONSTANTS & DATABASE MAPS
+// 📋 GAME CONSTANTS & NATURE SETTINGS
 // =========================================================================
 const NATURES = {
     'Adamant': { buff: 'attack', nerf: 'spAtk', multiplier: 1.1 },
@@ -94,9 +102,10 @@ const BALL_SETTINGS = {
     'greatballs': { name: '🔵 Great Ball', rateBonus: 0.15, price: 500 },
     'ultraballs': { name: '⚫ Ultra Ball', rateBonus: 0.30, price: 1200 },
     'masterballs': { name: '🟡 Master Ball', rateBonus: 1.0, price: 5000 }
-}
-    // =========================================================================
-// 🐉 DATABASE STATS POKÉMON RESMI (GEN 1 - GEN 5 EXTENDED: +100 MONSTERS)
+};
+
+// =========================================================================
+// 🐉 POKÉMON EXTENDED MEGA DATABASE (+100 SPECIES GEN 1-5)
 // =========================================================================
 const POKEMON_DB = {
     // === GENERASI 1 (KANTO) ===
@@ -232,9 +241,30 @@ const POKEMON_DB = {
     'Gigalith': { type: 'Rock', hp: 85, attack: 135, defense: 130, speed: 25, catchRate: 0.0, canSpawnWild: false, moves: ['Rock Slide', 'Stone Edge'] }
 };
 
-// Tambahkan baris ini di dalam objek MOVE_DATA lama kamu:
 const MOVE_DATA = {
-    // ... data lama kamu ...
+    'Tackle': { power: 40, type: 'Normal' },
+    'Scratch': { power: 40, type: 'Normal' },
+    'Pound': { power: 40, type: 'Normal' },
+    'Quick Attack': { power: 40, type: 'Normal' },
+    'Vine Whip': { power: 45, type: 'Grass' },
+    'Razor Leaf': { power: 55, type: 'Grass' },
+    'Solar Beam': { power: 120, type: 'Grass' },
+    'Ember': { power: 40, type: 'Fire' },
+    'Flamethrower': { power: 90, type: 'Fire' },
+    'Fire Blast': { power: 110, type: 'Fire' },
+    'Water Gun': { power: 40, type: 'Water' },
+    'Hydro Pump': { power: 90, type: 'Water' },
+    'Thunder Shock': { power: 40, type: 'Electric' },
+    'Thunderbolt': { power: 90, type: 'Electric' },
+    'Swift': { power: 60, type: 'Normal' },
+    'Gust': { power: 40, type: 'Flying' },
+    'Wing Attack': { power: 60, type: 'Flying' },
+    'Lick': { power: 30, type: 'Ghost' },
+    'Shadow Ball': { power: 80, type: 'Ghost' },
+    'Dark Pulse': { power: 80, type: 'Dark' },
+    'Karate Chop': { power: 50, type: 'Fighting' },
+    'Cross Chop': { power: 100, type: 'Fighting' },
+    'Skull Bash': { power: 130, type: 'Normal' },
     'Acid': { power: 40, type: 'Poison' },
     'Gunk Shot': { power: 120, type: 'Poison' },
     'Dig': { power: 80, type: 'Ground' },
@@ -308,7 +338,6 @@ const Inventory = sequelize.define('Inventory', {
     xp: { type: DataTypes.INTEGER, defaultValue: 0 },
     nature: { type: DataTypes.STRING, defaultValue: 'Hardy' },
     isShiny: { type: DataTypes.BOOLEAN, defaultValue: false },
-    // 🧬 DATA STATS PERMANEN IV (INDIVIDUAL VALUES) ACKAN 0-31
     ivHp: { type: DataTypes.INTEGER, defaultValue: 15 },
     ivAttack: { type: DataTypes.INTEGER, defaultValue: 15 },
     ivDefense: { type: DataTypes.INTEGER, defaultValue: 15 },
@@ -316,13 +345,12 @@ const Inventory = sequelize.define('Inventory', {
 });
 
 // =========================================================================
-// 🧮 STATS GENERATOR & ADVANCED FORMULA CALCULATOR
+// 🧮 STATS GENERATOR & ROLE BENEFIT FORMULA CALCULATOR
 // =========================================================================
 function getPokemonStats(pk) {
     const base = POKEMON_DB[pk.pokemonName] || { hp: 50, attack: 50, defense: 50, speed: 50 };
     const nature = NATURES[pk.nature] || { buff: null, nerf: null, multiplier: 1.0 };
     
-    // Formula Akurat Berdasarkan Algoritma Game Pokémon Core Series
     let calculatedHp = Math.floor(((base.hp * 2 + pk.ivHp) * pk.level) / 100) + pk.level + 10;
     let calculatedAtk = Math.floor(((base.attack * 2 + pk.ivAttack) * pk.level) / 100) + 5;
     let calculatedDef = Math.floor(((base.defense * 2 + pk.ivDefense) * pk.level) / 100) + 5;
@@ -352,6 +380,54 @@ function getTypeEffectiveness(atkType, defType) {
     return chart[atkType]?.[defType] !== undefined ? chart[atkType][defType] : 1.0;
 }
 
+async function getTrainerBenefits(userId) {
+    const totalCaught = await Inventory.count({ where: { userId } });
+    let bonusCoinMultiplier = 1.0;
+    let bonusCatchRate = 0.0;
+    let currentTier = "Novice Trainer";
+    let targetRoleId = CONFIG_SETUP.ROLES.NOVICE_TRAINER;
+
+    if (totalCaught >= 91) {
+        bonusCoinMultiplier = 1.35;
+        bonusCatchRate = 0.10;
+        currentTier = "Pokémon Champion";
+        targetRoleId = CONFIG_SETUP.ROLES.CHAMPION;
+    } else if (totalCaught >= 51) {
+        bonusCoinMultiplier = 1.20;
+        bonusCatchRate = 0.05;
+        currentTier = "Elite Four";
+        targetRoleId = CONFIG_SETUP.ROLES.ELITE_FOUR;
+    } else if (totalCaught >= 16) {
+        bonusCoinMultiplier = 1.10;
+        bonusCatchRate = 0.0;
+        currentTier = "Gym Challenger";
+        targetRoleId = CONFIG_SETUP.ROLES.GYM_CHALLENGER;
+    }
+
+    return { bonusCoinMultiplier, bonusCatchRate, currentTier, targetRoleId };
+}
+
+async function syncTrainerRole(interaction, userId, targetRoleId) {
+    if (!targetRoleId || targetRoleId.includes('ID_ROLE_')) return;
+    try {
+        const member = await interaction.guild.members.fetch(userId).catch(() => null);
+        if (!member) return;
+
+        if (!member.roles.cache.has(targetRoleId)) {
+            const allTierRoles = Object.values(CONFIG_SETUP.ROLES);
+            for (const roleId of allTierRoles) {
+                if (member.roles.cache.has(roleId) && roleId !== targetRoleId) {
+                    await member.roles.remove(roleId).catch(() => null);
+                }
+            }
+            await member.roles.add(targetRoleId).catch(() => null);
+            logToWeb(`[AUTO-ROLE] Menyinkronkan role pangkat ${member.user.username} ke Database Server.`);
+        }
+    } catch (err) {
+        console.error("Gagal melakukan sinkronisasi Auto-Role:", err);
+    }
+}
+
 // =========================================================================
 // 🚀 BOT INITIALIZATION & ENGINE DEPLOYMENT
 // =========================================================================
@@ -367,7 +443,7 @@ client.once('ready', async () => {
     
     client.guilds.cache.forEach(guild => updateVoiceCounter(guild));
 
-    // ⏱️ Auto Spawn Mechanism Loop (20 Menit Sekali)
+    // ⏱️ Auto Spawn Mechanism Loop (Setiap 20 Menit Sekali)
     setInterval(async () => {
         checkActiveEvent();
         const randomPokemon = WILD_SPAWN_LIST[Math.floor(Math.random() * WILD_SPAWN_LIST.length)];
@@ -377,24 +453,29 @@ client.once('ready', async () => {
         if (channel) {
             const embed = new EmbedBuilder()
                 .setTitle('🚨 POKÉMON LIAR MUNCUL!')
-                .setDescription(`Seekor wild **${wildPokemon}** meloncat keluar dari semak-semak! Ketik \`/catch\` dengan sigap untuk menjatuhkannya!`)
+                .setDescription(`Seekor wild **${wildPokemon}** meloncat keluar dari semak-semak! Ketik \`/catch\` dengan sigap untuk menangkapnya!`)
                 .setThumbnail('https://i.imgur.com/83pZ70V.png')
                 .setColor('#FF5722')
-                .setFooter({ text: 'Gunakan tipe Bola terbaikmu agar tidak terlepas dan kabur.' });
+                .setFooter({ text: 'Gunakan tipe Bola terbaikmu di channel tall-grass.' });
             await channel.send({ embeds: [embed] });
         }
         logToWeb(`[SPAWN] Sistem melahirkan ${wildPokemon} secara otomatis.`);
     }, CONFIG_SETUP.SPAWN_INTERVAL);
 
-    // Registering Multi-Slashed Command Builders
+    // Registering Slash Commands
     const commands = [
         new SlashCommandBuilder().setName('bag').setDescription('🎒 Cek isi dompet, item bola, dan koleksi lengkap monster milikmu'),
         new SlashCommandBuilder().setName('daily').setDescription('🎁 Klaim tunjangan koin dan bonus gacha bola harian gratisanmu'),
-        new SlashCommandBuilder().setName('catch').setDescription('🔴 Lempar bola pilihanmu ke Pokémon liar yang sedang aktif saat ini')
-            .addStringOption(o => o.setName('nama').setDescription('Nama target monster liar').setRequired(true))
-            .addStringOption(o => o.setName('ball').setDescription('Jenis bola yang ingin dilemparkan').setRequired(true).addChoices(
-                { name: '🔴 Pokéball', value: 'pokeballs' }, { name: '🔵 Great Ball', value: 'greatballs' },
-                { name: '⚫ Ultra Ball', value: 'ultraballs' }, { name: '🟡 Master Ball', value: 'masterballs' }
+        new SlashCommandBuilder().setName('leaderboard').setDescription('🏆 Lihat daftar 5 Trainer terkaya se-jagat raya'),
+        new SlashCommandBuilder().setName('release').setDescription('🍂 Bebaskan Pokémon ke alam bebas untuk mencairkan santunan uang koin')
+            .addIntegerOption(o => o.setName('id').setDescription('ID target Pokémon').setRequired(true)),
+        new SlashCommandBuilder().setName('evolve').setDescription('🔺 Picu mutasi evolusi Pokémon yang telah menyentuh batas standar (Lv. 16+)')
+            .addIntegerOption(o => o.setName('id').setDescription('ID target Pokémon').setRequired(true)),
+        new SlashCommandBuilder().setName('starter').setDescription('🎟️ Pilih dan klaim Pokémon starter pertamamu seumur hidup sekali')
+            .addStringOption(o => o.setName('pokemon').setDescription('Pilih partner Pokémon awalmu').setRequired(true).addChoices(
+                { name: 'Bulbasaur (Grass)', value: 'Bulbasaur' }, { name: 'Charmander (Fire)', value: 'Charmander' }, { name: 'Squirtle (Water)', value: 'Squirtle' },
+                { name: 'Chikorita (Grass)', value: 'Chikorita' }, { name: 'Cyndaquil (Fire)', value: 'Cyndaquil' }, { name: 'Totodile (Water)', value: 'Totodile' },
+                { name: 'Treecko (Grass)', value: 'Treecko' }, { name: 'Torchic (Fire)', value: 'Torchic' }, { name: 'Mudkip (Water)', value: 'Mudkip' }
             )),
         new SlashCommandBuilder().setName('shop').setDescription('🛒 Kunjungi Mall Pasar Global Pokémon')
             .addSubcommand(sub => sub.setName('list').setDescription('Tampilkan daftar katalog barang dagangan'))
@@ -404,18 +485,17 @@ client.once('ready', async () => {
                     { name: '⚫ Ultra Ball (1200 koin)', value: 'ultraballs' }, { name: '🟡 Master Ball (5000 koin)', value: 'masterballs' }
                 ))
                 .addIntegerOption(o => o.setName('jumlah').setDescription('Kuantitas jumlah').setRequired(true))),
+        new SlashCommandBuilder().setName('catch').setDescription('🔴 Lempar bola pilihanmu ke Pokémon liar yang sedang aktif saat ini')
+            .addStringOption(o => o.setName('nama').setDescription('Nama target monster liar').setRequired(true))
+            .addStringOption(o => o.setName('ball').setDescription('Jenis bola yang ingin dilemparkan').setRequired(true).addChoices(
+                { name: '🔴 Pokéball', value: 'pokeballs' }, { name: '🔵 Great Ball', value: 'greatballs' },
+                { name: '⚫ Ultra Ball', value: 'ultraballs' }, { name: '🟡 Master Ball', value: 'masterballs' }
+            )),
         new SlashCommandBuilder().setName('battle').setDescription('⚔️ Tantang Trainer lain untuk bertarung multi-turn real-time')
             .addUserOption(o => o.setName('lawan').setDescription('Akun target lawan').setRequired(true))
             .addIntegerOption(o => o.setName('id_pokemon').setDescription('ID Unik Pokémon jagoanmu').setRequired(true)),
-        new SlashCommandBuilder().setName('release').setDescription('🍂 Bebaskan Pokémon ke alam bebas untuk mencairkan santunan uang koin')
-            .addIntegerOption(o => o.setName('id').setDescription('ID target Pokémon').setRequired(true)),
-        new SlashCommandBuilder().setName('leaderboard').setDescription('🏆 Lihat daftar 5 Trainer terkaya se-jagat raya'),
-        new SlashCommandBuilder().setName('evolve').setDescription('🔺 Picu mutasi evolusi Pokémon yang telah menyentuh batas standar (Lv. 16+)')
-            .addIntegerOption(o => o.setName('id').setDescription('ID target Pokémon').setRequired(true)),
 
-        // =========================================================================
-        // 👑 ADMIN SUPER-USER ACCESS SYSTEM
-        // =========================================================================
+        // Admin Commands
         new SlashCommandBuilder().setName('admin-give-coin').setDescription('👑 [ADMIN] Alirkan dana koin gaib ke dompet member')
             .addUserOption(o => o.setName('target').setRequired(true)).addIntegerOption(o => o.setName('jumlah').setRequired(true))
             .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
@@ -455,7 +535,7 @@ client.once('ready', async () => {
 });
 
 // =========================================================================
-// 🎙️ VOICE STATE UPDATER (MONITOR AKTIVITAS)
+// 🎙️ VOICE STATE UPDATER (MONITOR AKTIVITAS CONCURRENT)
 // =========================================================================
 client.on('voiceStateUpdate', (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
@@ -469,23 +549,59 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
     const { commandName, user, options } = interaction;
 
-    // Trigger Anti-Cheat Double Action Spamming Lock
     if (!acquireLock(user.id)) {
         return interaction.reply({ content: '❌ **Anti-Cheat Guard:** Aksimu terlalu cepat! Harap tunggu antrean proses database selesai.', ephemeral: true });
     }
 
-    // Deferral Reply Anti 3-Detik Batas Akhir Discord Timeout
-    await interaction.deferReply({ ephemeral: (commandName === 'bag' || commandName === 'shop') });
+    const isEphemeral = (commandName === 'bag' || commandName === 'shop' || commandName === 'starter');
+    await interaction.deferReply({ ephemeral: isEphemeral });
     const t = await sequelize.transaction();
 
     try {
         const [userProf] = await Profile.findOrCreate({ where: { userId: user.id }, transaction: t });
 
+        if (commandName === 'starter') {
+            if (interaction.channelId !== CONFIG_SETUP.CLAIM_STARTER_CHANNEL_ID) {
+                await t.rollback(); releaseLock(user.id);
+                return interaction.editReply(`❌ Kamu hanya bisa mengklaim starter di channel <#${CONFIG_SETUP.CLAIM_STARTER_CHANNEL_ID}>!`);
+            }
+
+            const hasPokemon = await Inventory.findOne({ where: { userId: user.id }, transaction: t });
+            if (hasPokemon) {
+                await t.rollback(); releaseLock(user.id);
+                return interaction.editReply(`❌ Kamu sudah memulai petualanganmu! Kamu tidak bisa mengklaim Pokémon starter lagi.`);
+            }
+
+            const chosenPokemon = options.getString('pokemon');
+            const listNature = Object.keys(NATURES);
+            const pickedNature = listNature[Math.floor(Math.random() * listNature.length)];
+
+            await Inventory.create({ 
+                userId: user.id, pokemonName: chosenPokemon, isShiny: false, 
+                nature: pickedNature, level: 5, ivHp: Math.floor(Math.random() * 32), 
+                ivAttack: Math.floor(Math.random() * 32), ivDefense: Math.floor(Math.random() * 32), ivSpeed: Math.floor(Math.random() * 32) 
+            }, { transaction: t });
+
+            userProf.coins += 500;
+            await userProf.save({ transaction: t });
+            await t.commit();
+
+            logToWeb(`[STARTER] ${user.username} memilih ${chosenPokemon} sebagai partner pertamanya.`);
+            releaseLock(user.id);
+
+            const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+            if (member && !CONFIG_SETUP.ROLES.NOVICE_TRAINER.includes('ID_ROLE_')) {
+                await member.roles.add(CONFIG_SETUP.ROLES.NOVICE_TRAINER).catch(() => null);
+            }
+
+            return interaction.editReply(`🎉 **Selamat Datang di Dunia Pokémon, ${user.username}!** 🎉\n\nKamu berhasil memilih **${chosenPokemon}** (Lv. 5)!\n🎒 Kamu kini resmi menjadi \`Novice Trainer\` dan mendapatkan modal awal 🪙 \`500 Koin\`.`);
+        }
+
         if (commandName === 'bag') {
             const bag = await Inventory.findAll({ where: { userId: user.id }, transaction: t });
             await t.commit();
             
-            let pText = bag.length === 0 ? '*Kosong Melongpong*' : bag.map(p => {
+            let pText = bag.length === 0 ? '*Kosong Melongpong, ketik /starter terlebih dahulu*' : bag.map(p => {
                 const s = getPokemonStats(p);
                 return `• **ID: \`${p.id}\`** | ${p.isShiny ? '✨ ' : ''}**${p.pokemonName}** (Lv. ${p.level})\n  ↳ *Nature:* \`${p.nature}\` | *IV:* \`HP:${p.ivHp} A:${p.ivAttack} D:${p.ivDefense} S:${p.ivSpeed}\` | *MaxHP:* \`${s.maxHp}\``;
             }).join('\n');
@@ -502,19 +618,17 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (commandName === 'daily') {
-            const cooldown = 24 * 60 * 60 * 1000; // 24 Jam Penuh
+            const cooldown = 24 * 60 * 60 * 1000;
             const lastClaim = new Date(userProf.lastDailyClaim).getTime();
 
             if (Date.now() - lastClaim < cooldown) {
                 const sisa = cooldown - (Date.now() - lastClaim);
                 const jam = Math.floor(sisa / (1000 * 60 * 60));
                 const menit = Math.floor((sisa % (1000 * 60 * 60)) / (1000 * 60));
-                await t.rollback();
-                releaseLock(user.id);
+                await t.rollback(); releaseLock(user.id);
                 return interaction.editReply(`⏳ Kamu sudah mengambil jatah harianmu. Kembali lagi dalam **${jam} jam ${menit} menit**.`);
             }
 
-            // Gacha pembagian item harian gratisan
             const coinDapat = Math.floor(Math.random() * 500) + 500;
             userProf.coins += coinDapat;
             userProf.pokeballs += 5;
@@ -535,12 +649,12 @@ client.on('interactionCreate', async interaction => {
             if (sub === 'list') {
                 await t.commit();
                 const embed = new EmbedBuilder().setTitle('🛒 PASAR GLOBAL RIFT POKÉSHOP').setColor('#4caf50')
-                    .setDescription('Gunakan perintah `/shop buy [nama_item] [jumlah]` untuk melakukan transaksi pembelian.')
+                    .setDescription('Gunakan perintah `/shop buy [nama_item] [jumlah]` untuk transaksi.')
                     .addFields(
-                        { name: '🔴 Pokéball', value: `Harga: \`200 Koin\` per butir`, inline: true },
-                        { name: '🔵 Great Ball', value: `Harga: \`500 Koin\` per butir`, inline: true },
-                        { name: '⚫ Ultra Ball', value: `Harga: \`1200 Koin\` per butir`, inline: true },
-                        { name: '🟡 Master Ball', value: `Harga: \`5000 Koin\` per butir`, inline: true }
+                        { name: '🔴 Pokéball', value: `Harga: \`200 Koin\``, inline: true },
+                        { name: '🔵 Great Ball', value: `Harga: \`500 Koin\``, inline: true },
+                        { name: '⚫ Ultra Ball', value: `Harga: \`1200 Koin\``, inline: true },
+                        { name: '🟡 Master Ball', value: `Harga: \`5000 Koin\``, inline: true }
                     );
                 releaseLock(user.id);
                 return interaction.editReply({ embeds: [embed] });
@@ -551,15 +665,13 @@ client.on('interactionCreate', async interaction => {
                 const qty = options.getInteger('jumlah');
 
                 if (qty <= 0) {
-                    await t.rollback();
-                    releaseLock(user.id);
+                    await t.rollback(); releaseLock(user.id);
                     return interaction.editReply('❌ Kuantitas pesanan pembelian tidak valid.');
                 }
 
                 const totalCost = BALL_SETTINGS[itemType].price * qty;
                 if (userProf.coins < totalCost) {
-                    await t.rollback();
-                    releaseLock(user.id);
+                    await t.rollback(); releaseLock(user.id);
                     return interaction.editReply(`❌ Koin saldo kamu tidak memadai. Total tagihan belanja: \`${totalCost} Koin\`.`);
                 }
 
@@ -580,55 +692,49 @@ client.on('interactionCreate', async interaction => {
             const ballSelected = options.getString('ball');
 
             if (!wildPokemon || wildPokemon.toLowerCase() !== pokeTarget.toLowerCase()) {
-                await t.rollback();
-                releaseLock(user.id);
+                await t.rollback(); releaseLock(user.id);
                 return interaction.editReply('❌ Target Pokémon salah, atau barangkali monster tersebut sudah lelah dan kabur.');
             }
 
             if (userProf[ballSelected] <= 0) {
-                await t.rollback();
-                releaseLock(user.id);
+                await t.rollback(); releaseLock(user.id);
                 return interaction.editReply(`❌ Kamu kehabisan item amunisi **${BALL_SETTINGS[ballSelected].name}**.`);
             }
 
-            // Konsumsi peluru bola pemain
             userProf[ballSelected] -= 1;
-
+            const benefits = await getTrainerBenefits(user.id);
             const baseChance = POKEMON_DB[wildPokemon]?.catchRate || 0.50;
-            const absoluteChance = baseChance + BALL_SETTINGS[ballSelected].rateBonus;
+            const absoluteChance = baseChance + BALL_SETTINGS[ballSelected].rateBonus + benefits.bonusCatchRate;
 
             if (Math.random() <= absoluteChance) {
                 const isShiny = Math.random() <= (ACTIVE_EVENT.type === "DOUBLE_SHINY" ? 0.22 : 0.05);
                 const listNature = Object.keys(NATURES);
                 const pickedNature = listNature[Math.floor(Math.random() * listNature.length)];
 
-                // Acak Nilai IV (0 - 31)
-                const ivHp = Math.floor(Math.random() * 32);
-                const ivAtk = Math.floor(Math.random() * 32);
-                const ivDef = Math.floor(Math.random() * 32);
-                const ivSpd = Math.floor(Math.random() * 32);
-
                 await Inventory.create({ 
                     userId: user.id, pokemonName: wildPokemon, isShiny, 
-                    nature: pickedNature, level: 5, ivHp, ivAttack: ivAtk, 
-                    ivDefense: ivDef, ivSpeed: ivSpd 
+                    nature: pickedNature, level: 5, ivHp: Math.floor(Math.random() * 32), 
+                    ivAttack: Math.floor(Math.random() * 32), ivDefense: Math.floor(Math.random() * 32), ivSpeed: Math.floor(Math.random() * 32) 
                 }, { transaction: t });
 
-                let bonusCash = ACTIVE_EVENT.type === "DOUBLE_COIN" ? 300 : 150;
+                let baseCash = ACTIVE_EVENT.type === "DOUBLE_COIN" ? 300 : 150;
+                let bonusCash = Math.floor(baseCash * benefits.bonusCoinMultiplier);
                 userProf.coins += bonusCash;
 
                 await userProf.save({ transaction: t });
                 await t.commit();
 
-                logToWeb(`[CATCH] ${user.username} berhasil mengamankan ${wildPokemon}.`);
-                wildPokemon = null; // Reset spawn state global
+                logToWeb(`[CATCH] ${user.username} menangkap ${wildPokemon}.`);
+                wildPokemon = null; 
                 releaseLock(user.id);
-                return interaction.editReply(`🎉 **TARGET AMAN TERTANGKAP!** Kamu mendapatkan **${pokeTarget}** ${isShiny ? '(✨ SHINY!)' : ''}.\n• Koin Hadiah: \`+${bonusCash} Koin\`\n• Sifat Nature: \`${pickedNature}\``);
+
+                await syncTrainerRole(interaction, user.id, benefits.targetRoleId);
+                return interaction.editReply(`🎉 **TARGET AMAN TERTANGKAP!** Kamu mendapatkan **${pokeTarget}** ${isShiny ? '(✨ SHINY!)' : ''}.\n• Pangkat: \`${benefits.currentTier}\`\n• Hadiah: \`+${bonusCash} Koin\`\n• Sifat Nature: \`${pickedNature}\``);
             } else {
                 await userProf.save({ transaction: t });
                 await t.commit();
                 releaseLock(user.id);
-                return interaction.editReply(`💨 Ah sial! **${pokeTarget}** berhasil keluar dan meronta lolos dari kurungan bola lalu kabur.`);
+                return interaction.editReply(`💨 Ah sial! **${pokeTarget}** berhasil meronta lolos dari kurungan bola lalu kabur.`);
             }
         }
 
@@ -637,8 +743,7 @@ client.on('interactionCreate', async interaction => {
             const targetMonster = await Inventory.findOne({ where: { id: targetId, userId: user.id }, transaction: t });
 
             if (!targetMonster) {
-                await t.rollback();
-                releaseLock(user.id);
+                await t.rollback(); releaseLock(user.id);
                 return interaction.editReply('❌ Gagal mendeteksi ketersediaan monster dengan ID tersebut di kantongmu.');
             }
 
@@ -647,9 +752,9 @@ client.on('interactionCreate', async interaction => {
             await userProf.save({ transaction: t });
             await t.commit();
 
-            logToWeb(`[RELEASE] ${user.username} melikuidasi ID ${targetId}.`);
+            logToWeb(`[RELEASE] ${user.username} melepas ID ${targetId}.`);
             releaseLock(user.id);
-            return interaction.editReply(`🍂 Berhasil melepas **${targetMonster.pokemonName}** kembali ke hutan rimba. Dapat kompensasi pelipur lara \`+120 Koin\`.`);
+            return interaction.editReply(`🍂 Berhasil melepas **${targetMonster.pokemonName}** kembali ke alam bebas. Dapat kompensasi \`+120 Koin\`.`);
         }
 
         if (commandName === 'leaderboard') {
@@ -675,13 +780,13 @@ client.on('interactionCreate', async interaction => {
             await targetPoke.save({ transaction: t });
             await t.commit();
 
-            logToWeb(`[EVOLVE] ${user.username} berhasil mengevolusikan ${wujudLama}.`);
+            logToWeb(`[EVOLVE] ${user.username} mengevolusikan ${wujudLama}.`);
             releaseLock(user.id);
             return interaction.editReply(`🔺 **MUTASI EVOLUSI SPEKTAKULER!** **${wujudLama}** milikmu bermutasi menjadi **${targetPoke.pokemonName}**!`);
         }
 
         // =========================================================================
-        // 👑 ADMIN COMMAND EXECUTIONS HANDLER
+        // 👑 ADMIN ACTIONS HANDLING
         // =========================================================================
         if (commandName === 'admin-give-coin') {
             const target = options.getUser('target');
@@ -707,7 +812,7 @@ client.on('interactionCreate', async interaction => {
             await profTarget.save({ transaction: t });
             await t.commit();
 
-            logToWeb(`[ADMIN] ${user.username} menyuplai item ilegal ke ${target.username}.`);
+            logToWeb(`[ADMIN] ${user.username} menyuplai item ke ${target.username}.`);
             releaseLock(user.id);
             return interaction.editReply(`👑 **ADMINISTRATOR:** Memasok sebanyak \`${jumlahBall}x\` ${BALL_SETTINGS[jenisBall].name} ke dalam tas milik ${target}.`);
         }
@@ -716,12 +821,12 @@ client.on('interactionCreate', async interaction => {
             const namaPk = options.getString('pokemon');
             const matchedKey = Object.keys(POKEMON_DB).find(k => k.toLowerCase() === namaPk.toLowerCase());
 
-            if (!matchedKey) { await t.rollback(); releaseLock(user.id); return interaction.editReply('❌ Nama Pokémon tersebut tidak dikenali oleh kamus database internal.'); }
+            if (!matchedKey) { await t.rollback(); releaseLock(user.id); return interaction.editReply('❌ Nama Pokémon tersebut tidak dikenali oleh database.'); }
 
             wildPokemon = matchedKey;
             await t.commit();
 
-            logToWeb(`[ADMIN] ${user.username} memaksa takdir melahirkan ${wildPokemon}.`);
+            logToWeb(`[ADMIN] ${user.username} memaksa melahirkan ${wildPokemon}.`);
             releaseLock(user.id);
             return interaction.editReply(`👑 **ADMINISTRATOR:** Berhasil memaksa gerbang portal terbuka, **${wildPokemon}** keluar sekarang!`);
         }
@@ -742,32 +847,30 @@ client.on('interactionCreate', async interaction => {
             ACTIVE_EVENT = { name: namaEv, type: tipeEv, multiplier: 2.0, endAt: Date.now() + (durasiEv * 60 * 1000) };
             await t.commit();
 
-            logToWeb(`[ADMIN] Mengumumkan maklumat Event Server: ${namaEv}`);
+            logToWeb(`[ADMIN] Mengumumkan Event Server: ${namaEv}`);
             releaseLock(user.id);
-            return interaction.editReply(`📢 **GLOBAL PROJECT STATE UPDATED:** Event **${namaEv}** resmi dikumandangkan untuk \`${durasiEv} Menit\` ke depan!`);
+            return interaction.editReply(`📢 **GLOBAL STATE UPDATED:** Event **${namaEv}** resmi aktif untuk \`${durasiEv} Menit\` ke depan!`);
         }
 
         if (commandName === 'admin-wipe-user') {
             const target = options.getUser('target');
-            
             await Inventory.destroy({ where: { userId: target.id }, transaction: t });
             await Profile.destroy({ where: { userId: target.id }, transaction: t });
             await t.commit();
 
             logToWeb(`[ADMIN WIPE] Akun data ${target.username} dihancurkan total.`);
             releaseLock(user.id);
-            return interaction.editReply(`⚠️ **DANGER ZONE WIPE:** Seluruh berkas profile koin dan data peliharaan milik ${target} telah dihapus permanen dari sistem.`);
+            return interaction.editReply(`⚠️ **DANGER ZONE WIPE:** Seluruh berkas profile koin dan data peliharaan milik ${target} telah dihapus permanen.`);
         }
 
         if (commandName === 'admin-gift-all') {
             const nominal = options.getInteger('jumlah');
-            
             await Profile.increment({ coins: nominal }, { where: {}, transaction: t });
             await t.commit();
 
             logToWeb(`[ADMIN GLOBAL] Pembagian subsidi ${nominal} koin masal.`);
             releaseLock(user.id);
-            return interaction.editReply(`👑 **ADMINISTRATOR MASAL:** Berhasil membagikan kompensasi koin gratis senilai \`${nominal}\` ke seluruh penduduk user di database.`);
+            return interaction.editReply(`👑 **ADMINISTRATOR MASAL:** Berhasil membagikan koin gratis senilai \`${nominal}\` ke seluruh user.`);
         }
 
         if (commandName === 'battle') {
@@ -776,7 +879,7 @@ client.on('interactionCreate', async interaction => {
 
             if (targetLawan.id === user.id) {
                 await t.rollback(); releaseLock(user.id);
-                return interaction.editReply('❌ Kamu tidak bisa melakukan aksi skizofrenia bertarung melawan bayangan dirimu sendiri.');
+                return interaction.editReply('❌ Kamu tidak bisa bertarung melawan dirimu sendiri.');
             }
 
             const pokeSaya = await Inventory.findOne({ where: { id: idSaya, userId: user.id }, transaction: t });
@@ -784,7 +887,7 @@ client.on('interactionCreate', async interaction => {
             await t.commit();
 
             if (!pokeSaya) { releaseLock(user.id); return interaction.editReply('❌ Gagal menarik berkas data Pokémon andalanmu.'); }
-            if (listPokeLawan.length === 0) { releaseLock(user.id); return interaction.editReply('❌ Pihak penantang target tidak memiliki modal satu pun monster untuk bertarung.'); }
+            if (listPokeLawan.length === 0) { releaseLock(user.id); return interaction.editReply('❌ Pihak lawan tidak memiliki modal satu pun monster untuk bertarung.'); }
 
             const dropDownMenus = listPokeLawan.slice(0, 25).map(p => ({
                 label: `${p.pokemonName} (Lv. ${p.level}) — IV Atk: ${p.ivAttack}`,
@@ -800,7 +903,7 @@ client.on('interactionCreate', async interaction => {
 
             releaseLock(user.id);
             return interaction.editReply({ 
-                content: `⚔️ **DEKLARASI DUEL ARENA:** ${user} melempar sarung tangan menantang duel maut kepada ${targetLawan}! Silakan pihak target menekan menu di bawah ini:`, 
+                content: `⚔️ **DEKLARASI DUEL ARENA:** ${user} menantang duel maut kepada ${targetLawan}! Silakan pihak target menekan menu di bawah ini:`, 
                 components: [barisKomponen] 
             });
         }
@@ -821,13 +924,12 @@ client.on('interactionCreate', async selectInter => {
     
     const [,, p1Id, p2Id, poke1DbId] = selectInter.customId.split('_');
     if (selectInter.user.id !== p2Id) {
-        return selectInter.reply({ content: '❌ Kamu bukan target yang diundang di dalam pakta duel akbar ini!', ephemeral: true });
+        return selectInter.reply({ content: '❌ Kamu bukan target yang diundang di dalam pvp duel ini!', ephemeral: true });
     }
 
     await selectInter.deferReply();
 
     const poke2DbId = selectInter.values[0].replace('rft_opp_', '');
-    
     const ksatria1 = await Inventory.findByPk(poke1DbId);
     const ksatria2 = await Inventory.findByPk(poke2DbId);
 
@@ -847,12 +949,10 @@ client.on('interactionCreate', async selectInter => {
     const moveList1 = POKEMON_DB[ksatria1.pokemonName]?.moves || ['Tackle'];
     const moveList2 = POKEMON_DB[ksatria2.pokemonName]?.moves || ['Tackle'];
 
-    // Simulasi Siklus Putaran Turn Pertarungan Berkelanjutan Berbasis Kecepatan Speed Stats
     let turnCount = 1;
     while (curHp1 > 0 && curHp2 > 0 && turnCount <= 6) {
         pertarunganLogs.push(`[🥊 **ROUND ${turnCount}**]`);
         
-        // Entitas 1 Menyerang Entitas 2
         let moveP1 = moveList1[Math.floor(Math.random() * moveList1.length)];
         let moveMeta1 = MOVE_DATA[moveP1] || { power: 40, type: 'Normal' };
         let efektivitas1 = getTypeEffectiveness(moveMeta1.type, POKEMON_DB[ksatria2.pokemonName]?.type);
@@ -864,7 +964,6 @@ client.on('interactionCreate', async selectInter => {
 
         if (curHp2 <= 0) break;
 
-        // Entitas 2 Membalas Menyerang Entitas 1
         let moveP2 = moveList2[Math.floor(Math.random() * moveList2.length)];
         let moveMeta2 = MOVE_DATA[moveP2] || { power: 40, type: 'Normal' };
         let efektivitas2 = getTypeEffectiveness(moveMeta2.type, POKEMON_DB[ksatria1.pokemonName]?.type);
@@ -877,22 +976,19 @@ client.on('interactionCreate', async selectInter => {
         turnCount++;
     }
 
-    // Penentuan Konklusi Akhir Jawara Arena Pertarungan
     let sangPemenang = curHp2 <= 0 ? ksatria1 : ksatria2;
     let pemenangId = curHp2 <= 0 ? p1Id : p2Id;
     let nominalHadiahKoin = Math.floor(Math.random() * 100) + 100;
 
-    // Tambah XP poin untuk monster yang memenangkan laga pertarungan
     sangPemenang.xp += 45;
     let levelUpString = "";
     if (sangPemenang.xp >= 100) {
         sangPemenang.level += 1;
         sangPemenang.xp = 0;
-        levelUpString = `\n🆙 **LEVEL UP CELEBRATION!** **${sangPemenang.pokemonName}** berevolusi secara kekuatan naik menjangkau Level \`${sangPemenang.level}\`!`;
+        levelUpString = `\n🆙 **LEVEL UP!** **${sangPemenang.pokemonName}** naik menjangkau Level \`${sangPemenang.level}\`!`;
     }
     await sangPemenang.save();
 
-    // Input transfer koin ke profil pemenang
     const profilePemenang = await Profile.findOne({ where: { userId: pemenangId } });
     if (profilePemenang) {
         profilePemenang.coins += nominalHadiahKoin;
@@ -910,7 +1006,7 @@ client.on('interactionCreate', async selectInter => {
 });
 
 // =========================================================================
-// 💻 ADVANCED WEBPANEL LOG MONITORING DASHBOARD INTERFACE
+// 💻 WEBPANEL MONITORING DASHBOARD INTERFACE
 // =========================================================================
 app.get('/', async (req, res) => {
     try {
@@ -925,26 +1021,21 @@ app.get('/', async (req, res) => {
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Rift Hyper Engine Control Panel v4</title>
             <style>
-                body { background-color: #0d0e12; color: #e2e8f0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 30px; margin: 0; }
+                body { background-color: #0d0e12; color: #e2e8f0; font-family: sans-serif; padding: 30px; margin: 0; }
                 .container { max-width: 1200px; margin: 0 auto; }
                 header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e293b; padding-bottom: 20px; margin-bottom: 30px; }
-                h1 { color: #38bdf8; font-weight: 700; margin: 0; font-size: 28px; }
-                .status-badge { background: #10b981; color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; text-transform: uppercase; }
+                h1 { color: #38bdf8; margin: 0; font-size: 28px; }
+                .status-badge { background: #10b981; color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; }
                 .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px; }
-                .stat-card { background: #1e293b; padding: 20px; border-radius: 12px; border-top: 4px solid #38bdf8; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }
-                .stat-card h3 { margin: 0 0 10px 0; color: #94a3b8; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+                .stat-card { background: #1e293b; padding: 20px; border-radius: 12px; border-top: 4px solid #38bdf8; }
+                .stat-card h3 { margin: 0 0 10px 0; color: #94a3b8; font-size: 14px; text-transform: uppercase; }
                 .stat-card p { margin: 0; font-size: 22px; font-weight: 600; color: #f8fafc; }
                 .stat-card span { color: #38bdf8; }
-                .log-section { background: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.6); }
-                .log-header { font-size: 16px; font-weight: 600; color: #fbbf24; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between; }
-                .terminal-box { background: #000000; color: #34d399; padding: 20px; height: 400px; overflow-y: auto; font-family: 'Consolas', 'Courier New', monospace; border-radius: 8px; font-size: 14px; line-height: 1.6; border: 1px solid #111827; }
-                .log-row { border-bottom: 1px solid #121b2c; padding: 6px 0; color: #34d399; }
-                .log-row:hover { background: #0b132b; }
+                .log-section { background: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; }
+                .terminal-box { background: #000000; color: #34d399; padding: 20px; height: 350px; overflow-y: auto; font-family: monospace; border-radius: 8px; font-size: 14px; }
+                .log-row { border-bottom: 1px solid #121b2c; padding: 6px 0; }
             </style>
-            <script>
-                // Auto reload halaman setiap 15 detik sekali untuk sinkronisasi log real-time
-                setInterval(() => { window.location.reload(); }, 15000);
-            </script>
+            <script>setInterval(() => { window.location.reload(); }, 15000);</script>
         </head>
         <body>
             <div class="container">
@@ -955,27 +1046,21 @@ app.get('/', async (req, res) => {
                     </div>
                     <div class="status-badge">Cluster Active</div>
                 </header>
-
                 <div class="dashboard-grid">
                     <div class="stat-card">
                         <h3>Kondisi Event Global</h3>
                         <p><span>🎉 Event:</span> ${ACTIVE_EVENT.name}</p>
-                        <p style="font-size: 14px; margin-top: 5px; color: #a1a1aa;">Aturan Mekanik: Spawn Otomatis Setiap 20 Menit</p>
                     </div>
                     <div class="stat-card">
                         <h3>Statistik Data Infrastruktur</h3>
-                        <p>👥 Total Pemain Terdaftar: <span>${totalPemain} User</span></p>
-                        <p>🐉 Total Koleksi Pokémon: <span>${totalMonster} Ekor</span></p>
+                        <p>👥 Total Pemain: <span>${totalPemain} User</span></p>
+                        <p>🐉 Total Pokémon: <span>${totalMonster} Ekor</span></p>
                     </div>
                 </div>
-
                 <div class="log-section">
-                    <div class="log-header">
-                        <span>📜 INTERNAL LIVE AUDIT SYSTEM TRAFFIC LOGS</span>
-                        <span style="font-size: 12px; color: #64748b;">Auto-Refresh Active (15s)</span>
-                    </div>
+                    <h3 style="color: #fbbf24;">📜 INTERNAL LIVE TRAFFIC LOGS</h3>
                     <div class="terminal-box">
-                        ${serverLogs.length === 0 ? '<div style="color: #4b5563;">> Sistem dalam kondisi idle menunggu instruksi lalu lintas data...</div>' : serverLogs.map(logLine => `<div class="log-row">> ${logLine}</div>`).join('')}
+                        ${serverLogs.length === 0 ? '<div>> Menunggu instruksi data...</div>' : serverLogs.map(logLine => `<div class="log-row">> ${logLine}</div>`).join('')}
                     </div>
                 </div>
             </div>
@@ -985,12 +1070,11 @@ app.get('/', async (req, res) => {
         res.setHeader('Content-Type', 'text/html');
         return res.send(templateHtml);
     } catch (err) {
-        return res.status(500).send("Gagal mengompilasi lembar kendali Web-Panel: " + err.message);
+        return res.status(500).send("Gagal mengompilasi Web-Panel: " + err.message);
     }
 });
 
-// Jalankan Konektivitas Server Port Jaringan & Login Discord Gateway Token
 app.listen(PORT, () => {
-    logToWeb(`[SYS] Saluran HTTP Web Server Express sukses diaktifkan pada Port Alokasi *:${PORT}`);
+    logToWeb(`[SYS] Express Web Server diaktifkan pada Port *:${PORT}`);
 });
 client.login(process.env.DISCORD_TOKEN);
