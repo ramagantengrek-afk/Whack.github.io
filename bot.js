@@ -1,1080 +1,481 @@
 const { 
-    Client, GatewayIntentBits, Routes, SlashCommandBuilder, 
-    PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, 
-    StringSelectMenuBuilder, ButtonBuilder, ButtonStyle 
+    Client, 
+    GatewayIntentBits, 
+    REST, 
+    Routes, 
+    SlashCommandBuilder, 
+    EmbedBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    ComponentType 
 } = require('discord.js');
 const { Sequelize, DataTypes, Op } = require('sequelize');
-const express = require('express');
+const crypto = require('crypto');
 require('dotenv').config();
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
 // =========================================================================
-// 🔴 CENTRAL WEB LOG & GLOBAL PROJECT STATE
+// 🎛️ GLOBAL CONFIGURATION MATRIX
 // =========================================================================
-const serverLogs = [];
-let ACTIVE_EVENT = { name: "Normal Adventure", type: "NONE", multiplier: 1.0, endAt: null };
-
-function logToWeb(message) {
-    const time = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-    const formattedLog = `[${time}] ${message}`;
-    console.log(formattedLog);
-    serverLogs.unshift(formattedLog);
-    if (serverLogs.length > 250) serverLogs.pop();
-}
-
-function checkActiveEvent() {
-    if (ACTIVE_EVENT.endAt && Date.now() > ACTIVE_EVENT.endAt) {
-        logToWeb(`[EVENT] Event "${ACTIVE_EVENT.name}" telah berakhir secara otomatis.`);
-        ACTIVE_EVENT = { name: "Normal Adventure", type: "NONE", multiplier: 1.0, endAt: null };
-    }
-}
-
-// =========================================================================
-// 🛡️ ANTI-CHEAT: ADVANCED MEMORY LOCKING MECHANISM
-// =========================================================================
-const activeUserLocks = new Set();
-
-function acquireLock(userId) {
-    if (activeUserLocks.has(userId)) return false;
-    activeUserLocks.add(userId);
-    return true;
-}
-
-function releaseLock(userId) {
-    activeUserLocks.delete(userId);
-}
-
-// =========================================================================
-// ⚙️ CHANNELS & ROLES CONFIGURATION ENVIRONMENT
-// =========================================================================
-const CONFIG_SETUP = {
-    SPAWN_CHANNEL_ID: process.env.SPAWN_CHANNEL_ID || 'ID_TEXT_CHANNEL_SPAWN',
-    CLAIM_STARTER_CHANNEL_ID: process.env.CLAIM_STARTER_CHANNEL_ID || 'ID_CHANNEL_CLAIM_STARTER',
-    VOICE_COUNTER_CHANNEL_ID: process.env.VOICE_COUNTER_CHANNEL_ID || 'ID_VOICE_CHANNEL_COUNTER',
-    SPAWN_INTERVAL: 20 * 60 * 1000, // TEPAT 20 MENIT
-    
-    ROLES: {
-        NOVICE_TRAINER: process.env.ROLE_NOVICE_ID || 'ID_ROLE_NOVICE_TRAINER',
-        GYM_CHALLENGER: process.env.ROLE_GYM_ID || 'ID_ROLE_GYM_CHALLENGER',
-        ELITE_FOUR: process.env.ROLE_ELITE_ID || 'ID_ROLE_ELITE_FOUR',
-        CHAMPION: process.env.ROLE_CHAMPION_ID || 'ID_ROLE_CHAMPION'
-    }
-};
-
-async function updateVoiceCounter(guild) {
-    if (!CONFIG_SETUP.VOICE_COUNTER_CHANNEL_ID || CONFIG_SETUP.VOICE_COUNTER_CHANNEL_ID.includes('ID_VOICE_')) return;
-    try {
-        const channel = await guild.channels.fetch(CONFIG_SETUP.VOICE_COUNTER_CHANNEL_ID).catch(() => null);
-        if (!channel) return;
-
-        let totalVoiceMembers = 0;
-        guild.channels.cache.forEach(c => {
-            if (c.isVoiceBased()) totalVoiceMembers += c.members.size;
-        });
-
-        const newName = `🎙️ Users Online: ${totalVoiceMembers}`;
-        if (channel.name !== newName) {
-            await channel.setName(newName);
-            logToWeb(`[VOICE] Memperbarui jumlah counter channel menjadi: ${totalVoiceMembers}`);
-        }
-    } catch (err) {
-        console.error("Gagal melakukan pembaruan nama Voice Counter:", err);
-    }
-}
-
-// =========================================================================
-// 📋 GAME CONSTANTS & NATURE SETTINGS
-// =========================================================================
-const NATURES = {
-    'Adamant': { buff: 'attack', nerf: 'spAtk', multiplier: 1.1 },
-    'Modest': { buff: 'spAtk', nerf: 'attack', multiplier: 1.1 },
-    'Timid': { buff: 'speed', nerf: 'attack', multiplier: 1.1 },
-    'Jolly': { buff: 'speed', nerf: 'spAtk', multiplier: 1.1 },
-    'Hardy': { buff: null, nerf: null, multiplier: 1.0 },
-    'Bold': { buff: 'defense', nerf: 'attack', multiplier: 1.1 },
-    'Calm': { buff: 'spDef', nerf: 'attack', multiplier: 1.1 }
-};
-
-const BALL_SETTINGS = {
-    'pokeballs': { name: '🔴 Pokéball', rateBonus: 0.0, price: 200 },
-    'greatballs': { name: '🔵 Great Ball', rateBonus: 0.15, price: 500 },
-    'ultraballs': { name: '⚫ Ultra Ball', rateBonus: 0.30, price: 1200 },
-    'masterballs': { name: '🟡 Master Ball', rateBonus: 1.0, price: 5000 }
+const CONFIG = {
+    TOKEN: process.env.DISCORD_TOKEN,
+    CLIENT_ID: process.env.CLIENT_ID || '123456789012345678', // Ganti dengan Application ID bot kamu
+    COOLDOWN_TIME: 15000, // Cooldown hunt: 15 detik
+    // 🎭 PROGRESSIVE ROLE ENGINE MATRIX (Ganti dengan ID Role asli Servermu)
+    ROLE_TIERS: [
+        { min: 1, max: 9, roleId: '1521411480942018621', name: '🎒 Route One Wanderer' },
+        { min: 10, max: 29, roleId: '1521411859171774488', name: '⚔️ Gym Challenger' },
+        { min: 30, max: 74, roleId: '1521412227268345896', name: '🛡️ Elite Frontier' },
+        { min: 75, max: 149, roleId: '1521412497104703581', name: '👑 Kanto Vanguard' },
+        { min: 150, max: Infinity, roleId: '1521758737424056413', name: '🧬 Eternal Mythical Master' }
+    ]
 };
 
 // =========================================================================
-// 🐉 POKÉMON EXTENDED MEGA DATABASE (+100 SPECIES GEN 1-5)
+// 🗄️ HIGH-AVAILABILITY DATABASE ENGINE (Railway Safe Guard)
 // =========================================================================
-const POKEMON_DB = {
-    // === GENERASI 1 (KANTO) ===
-    'Bulbasaur': { type: 'Grass', hp: 45, attack: 49, defense: 49, speed: 45, catchRate: 0.55, evolvesTo: 'Ivysaur', canSpawnWild: true, moves: ['Tackle', 'Vine Whip'] },
-    'Ivysaur': { type: 'Grass', hp: 60, attack: 62, defense: 63, speed: 60, catchRate: 0.0, evolvesTo: 'Venusaur', canSpawnWild: false, moves: ['Vine Whip', 'Razor Leaf'] },
-    'Venusaur': { type: 'Grass', hp: 80, attack: 82, defense: 83, speed: 80, catchRate: 0.0, canSpawnWild: false, moves: ['Razor Leaf', 'Solar Beam'] },
-    'Charmander': { type: 'Fire', hp: 39, attack: 52, defense: 43, speed: 65, catchRate: 0.55, evolvesTo: 'Charmeleon', canSpawnWild: true, moves: ['Scratch', 'Ember'] },
-    'Charmeleon': { type: 'Fire', hp: 58, attack: 64, defense: 58, speed: 80, catchRate: 0.0, evolvesTo: 'Charizard', canSpawnWild: false, moves: ['Ember', 'Flamethrower'] },
-    'Charizard': { type: 'Fire', hp: 78, attack: 84, defense: 78, speed: 100, catchRate: 0.0, canSpawnWild: false, moves: ['Flamethrower', 'Fire Blast'] },
-    'Squirtle': { type: 'Water', hp: 44, attack: 48, defense: 65, speed: 43, catchRate: 0.55, evolvesTo: 'Wartortle', canSpawnWild: true, moves: ['Tackle', 'Water Gun'] },
-    'Wartortle': { type: 'Water', hp: 59, attack: 63, defense: 80, speed: 58, catchRate: 0.0, evolvesTo: 'Blastoise', canSpawnWild: false, moves: ['Water Gun', 'Hydro Pump'] },
-    'Blastoise': { type: 'Water', hp: 79, attack: 83, defense: 100, speed: 78, catchRate: 0.0, canSpawnWild: false, moves: ['Hydro Pump', 'Skull Bash'] },
-    'Pikachu': { type: 'Electric', hp: 35, attack: 55, defense: 40, speed: 90, catchRate: 0.45, evolvesTo: 'Raichu', canSpawnWild: true, moves: ['Quick Attack', 'Thunder Shock'] },
-    'Raichu': { type: 'Electric', hp: 60, attack: 90, defense: 55, speed: 110, catchRate: 0.0, canSpawnWild: false, moves: ['Thunder Shock', 'Thunderbolt'] },
-    'Eevee': { type: 'Normal', hp: 55, attack: 55, defense: 50, speed: 55, catchRate: 0.50, evolvesTo: 'Vaporeon', canSpawnWild: true, moves: ['Tackle', 'Swift'] },
-    'Vaporeon': { type: 'Water', hp: 130, attack: 65, defense: 60, speed: 65, catchRate: 0.0, canSpawnWild: false, moves: ['Water Gun', 'Hydro Pump'] },
-    'Pidgey': { type: 'Flying', hp: 40, attack: 45, defense: 40, speed: 56, catchRate: 0.70, evolvesTo: 'Pidgeotto', canSpawnWild: true, moves: ['Tackle', 'Gust'] },
-    'Pidgeotto': { type: 'Flying', hp: 63, attack: 60, defense: 55, speed: 71, catchRate: 0.0, canSpawnWild: false, moves: ['Gust', 'Wing Attack'] },
-    'Gastly': { type: 'Ghost', hp: 30, attack: 35, defense: 30, speed: 80, catchRate: 0.60, evolvesTo: 'Haunter', canSpawnWild: true, moves: ['Lick', 'Shadow Ball'] },
-    'Haunter': { type: 'Ghost', hp: 45, attack: 50, defense: 45, speed: 95, catchRate: 0.0, canSpawnWild: false, moves: ['Shadow Ball', 'Dark Pulse'] },
-    'Machop': { type: 'Fighting', hp: 70, attack: 80, defense: 50, speed: 35, catchRate: 0.50, evolvesTo: 'Machoke', canSpawnWild: true, moves: ['Pound', 'Karate Chop'] },
-    'Machoke': { type: 'Fighting', hp: 80, attack: 100, defense: 70, speed: 45, catchRate: 0.0, canSpawnWild: false, moves: ['Karate Chop', 'Cross Chop'] },
-    'Caterpie': { type: 'Bug', hp: 45, attack: 30, defense: 35, speed: 45, catchRate: 0.75, evolvesTo: 'Metapod', canSpawnWild: true, moves: ['Tackle'] },
-    'Metapod': { type: 'Bug', hp: 50, attack: 20, defense: 55, speed: 30, catchRate: 0.0, evolvesTo: 'Butterfree', canSpawnWild: false, moves: ['Tackle'] },
-    'Butterfree': { type: 'Bug', hp: 60, attack: 45, defense: 50, speed: 70, catchRate: 0.0, canSpawnWild: false, moves: ['Gust', 'Psybeam'] },
-    'Rattata': { type: 'Normal', hp: 30, attack: 56, defense: 35, speed: 72, catchRate: 0.75, evolvesTo: 'Raticate', canSpawnWild: true, moves: ['Tackle', 'Quick Attack'] },
-    'Raticate': { type: 'Normal', hp: 55, attack: 81, defense: 60, speed: 97, catchRate: 0.0, canSpawnWild: false, moves: ['Quick Attack', 'Hyper Fang'] },
-    'Ekans': { type: 'Poison', hp: 35, attack: 60, defense: 44, speed: 55, catchRate: 0.65, evolvesTo: 'Arbok', canSpawnWild: true, moves: ['Pound', 'Acid'] },
-    'Arbok': { type: 'Poison', hp: 60, attack: 95, defense: 69, speed: 80, catchRate: 0.0, canSpawnWild: false, moves: ['Acid', 'Gunk Shot'] },
-    'Sandshrew': { type: 'Ground', hp: 50, attack: 75, defense: 85, speed: 40, catchRate: 0.60, evolvesTo: 'Sandslash', canSpawnWild: true, moves: ['Scratch', 'Dig'] },
-    'Sandslash': { type: 'Ground', hp: 75, attack: 100, defense: 110, speed: 65, catchRate: 0.0, canSpawnWild: false, moves: ['Dig', 'Earthquake'] },
-    'Zubat': { type: 'Flying', hp: 40, attack: 45, defense: 35, speed: 55, catchRate: 0.70, evolvesTo: 'Golbat', canSpawnWild: true, moves: ['Absorb', 'Air Cutter'] },
-    'Golbat': { type: 'Flying', hp: 75, attack: 80, defense: 70, speed: 90, catchRate: 0.0, canSpawnWild: false, moves: ['Air Cutter', 'Air Slash'] },
-    'Growlithe': { type: 'Fire', hp: 55, attack: 70, defense: 45, speed: 60, catchRate: 0.50, evolvesTo: 'Arcanine', canSpawnWild: true, moves: ['Ember', 'Flame Wheel'] },
-    'Arcanine': { type: 'Fire', hp: 90, attack: 110, defense: 80, speed: 95, catchRate: 0.0, canSpawnWild: false, moves: ['Flame Wheel', 'Fire Blast'] },
-    'Geodude': { type: 'Rock', hp: 40, attack: 80, defense: 100, speed: 20, catchRate: 0.60, evolvesTo: 'Graveler', canSpawnWild: true, moves: ['Tackle', 'Rock Throw'] },
-    'Graveler': { type: 'Rock', hp: 55, attack: 95, defense: 115, speed: 35, catchRate: 0.0, evolvesTo: 'Golem', canSpawnWild: false, moves: ['Rock Throw', 'Stone Edge'] },
-    'Golem': { type: 'Rock', hp: 80, attack: 120, defense: 130, speed: 45, catchRate: 0.0, canSpawnWild: false, moves: ['Stone Edge', 'Earthquake'] },
-
-    // === GENERASI 2 (JOHTO) ===
-    'Chikorita': { type: 'Grass', hp: 45, attack: 49, defense: 65, speed: 45, catchRate: 0.55, evolvesTo: 'Bayleef', canSpawnWild: true, moves: ['Tackle', 'Razor Leaf'] },
-    'Bayleef': { type: 'Grass', hp: 60, attack: 62, defense: 80, speed: 60, catchRate: 0.0, evolvesTo: 'Meganium', canSpawnWild: false, moves: ['Razor Leaf', 'Solar Beam'] },
-    'Meganium': { type: 'Grass', hp: 80, attack: 82, defense: 100, speed: 80, catchRate: 0.0, canSpawnWild: false, moves: ['Solar Beam', 'Body Slam'] },
-    'Cyndaquil': { type: 'Fire', hp: 39, attack: 52, defense: 43, speed: 65, catchRate: 0.55, evolvesTo: 'Quilava', canSpawnWild: true, moves: ['Tackle', 'Ember'] },
-    'Quilava': { type: 'Fire', hp: 58, attack: 64, defense: 58, speed: 80, catchRate: 0.0, evolvesTo: 'Typhlosion', canSpawnWild: false, moves: ['Ember', 'Flamethrower'] },
-    'Typhlosion': { type: 'Fire', hp: 78, attack: 84, defense: 78, speed: 100, catchRate: 0.0, canSpawnWild: false, moves: ['Flamethrower', 'Eruption'] },
-    'Totodile': { type: 'Water', hp: 50, attack: 65, defense: 64, speed: 43, catchRate: 0.55, evolvesTo: 'Croconaw', canSpawnWild: true, moves: ['Scratch', 'Water Gun'] },
-    'Croconaw': { type: 'Water', hp: 65, attack: 80, defense: 80, speed: 58, catchRate: 0.0, evolvesTo: 'Feraligatr', canSpawnWild: false, moves: ['Water Gun', 'Hydro Pump'] },
-    'Feraligatr': { type: 'Water', hp: 85, attack: 105, defense: 100, speed: 78, catchRate: 0.0, canSpawnWild: false, moves: ['Hydro Pump', 'Crunch'] },
-    'Sentret': { type: 'Normal', hp: 35, attack: 46, defense: 34, speed: 20, catchRate: 0.75, evolvesTo: 'Furret', canSpawnWild: true, moves: ['Tackle', 'Quick Attack'] },
-    'Furret': { type: 'Normal', hp: 85, attack: 76, defense: 64, speed: 90, catchRate: 0.0, canSpawnWild: false, moves: ['Quick Attack', 'Slam'] },
-    'Hoothoot': { type: 'Flying', hp: 60, attack: 30, defense: 30, speed: 50, catchRate: 0.70, evolvesTo: 'Noctowl', canSpawnWild: true, moves: ['Tackle', 'Gust'] },
-    'Noctowl': { type: 'Flying', hp: 100, attack: 50, defense: 50, speed: 70, catchRate: 0.0, canSpawnWild: false, moves: ['Gust', 'Air Slash'] },
-    'Ledyba': { type: 'Bug', hp: 40, attack: 20, defense: 30, speed: 55, catchRate: 0.75, evolvesTo: 'Ledian', canSpawnWild: true, moves: ['Tackle', 'Swift'] },
-    'Ledian': { type: 'Bug', hp: 55, attack: 35, defense: 50, speed: 85, catchRate: 0.0, canSpawnWild: false, moves: ['Swift', 'Bug Buzz'] },
-    'Spinarak': { type: 'Bug', hp: 40, attack: 60, defense: 40, speed: 30, catchRate: 0.75, evolvesTo: 'Ariados', canSpawnWild: true, moves: ['Poison Sting', 'Leech Life'] },
-    'Ariados': { type: 'Bug', hp: 70, attack: 90, defense: 70, speed: 40, catchRate: 0.0, canSpawnWild: false, moves: ['Leech Life', 'Bug Buzz'] },
-    'Mareep': { type: 'Electric', hp: 55, attack: 40, defense: 40, speed: 35, catchRate: 0.60, evolvesTo: 'Flaaffy', canSpawnWild: true, moves: ['Tackle', 'Thunder Shock'] },
-    'Flaaffy': { type: 'Electric', hp: 70, attack: 55, defense: 55, speed: 45, catchRate: 0.0, evolvesTo: 'Ampharos', canSpawnWild: false, moves: ['Thunder Shock', 'Thunderbolt'] },
-    'Ampharos': { type: 'Electric', hp: 90, attack: 75, defense: 85, speed: 55, catchRate: 0.0, canSpawnWild: false, moves: ['Thunderbolt', 'Thunder'] },
-    'Marill': { type: 'Water', hp: 70, attack: 20, defense: 50, speed: 40, catchRate: 0.65, evolvesTo: 'Azumarill', canSpawnWild: true, moves: ['Tackle', 'Water Gun'] },
-    'Azumarill': { type: 'Water', hp: 100, attack: 50, defense: 80, speed: 50, catchRate: 0.0, canSpawnWild: false, moves: ['Water Gun', 'Hydro Pump'] },
-
-    // === GENERASI 3 (HOENN) ===
-    'Treecko': { type: 'Grass', hp: 40, attack: 45, defense: 35, speed: 70, catchRate: 0.55, evolvesTo: 'Grovyle', canSpawnWild: true, moves: ['Pound', 'Absorb'] },
-    'Grovyle': { type: 'Grass', hp: 50, attack: 65, defense: 45, speed: 95, catchRate: 0.0, evolvesTo: 'Sceptile', canSpawnWild: false, moves: ['Absorb', 'Leaf Blade'] },
-    'Sceptile': { type: 'Grass', hp: 70, attack: 85, defense: 65, speed: 120, catchRate: 0.0, canSpawnWild: false, moves: ['Leaf Blade', 'Solar Beam'] },
-    'Torchic': { type: 'Fire', hp: 45, attack: 60, defense: 40, speed: 45, catchRate: 0.55, evolvesTo: 'Combusken', canSpawnWild: true, moves: ['Scratch', 'Ember'] },
-    'Combusken': { type: 'Fire', hp: 60, attack: 85, defense: 60, speed: 55, catchRate: 0.0, evolvesTo: 'Blaziken', canSpawnWild: false, moves: ['Ember', 'Flame Charge'] },
-    'Blaziken': { type: 'Fire', hp: 80, attack: 120, defense: 70, speed: 80, catchRate: 0.0, canSpawnWild: false, moves: ['Flame Charge', 'Flare Blitz'] },
-    'Mudkip': { type: 'Water', hp: 50, attack: 70, defense: 50, speed: 40, catchRate: 0.55, evolvesTo: 'Marshtomp', canSpawnWild: true, moves: ['Tackle', 'Water Gun'] },
-    'Marshtomp': { type: 'Water', hp: 70, attack: 85, defense: 70, speed: 50, catchRate: 0.0, evolvesTo: 'Swampert', canSpawnWild: false, moves: ['Water Gun', 'Mud Shot'] },
-    'Swampert': { type: 'Water', hp: 100, attack: 110, defense: 90, speed: 60, catchRate: 0.0, canSpawnWild: false, moves: ['Mud Shot', 'Hydro Pump'] },
-    'Poochyena': { type: 'Dark', hp: 35, attack: 55, defense: 35, speed: 35, catchRate: 0.75, evolvesTo: 'Mightyena', canSpawnWild: true, moves: ['Tackle', 'Bite'] },
-    'Mightyena': { type: 'Dark', hp: 70, attack: 90, defense: 70, speed: 70, catchRate: 0.0, canSpawnWild: false, moves: ['Bite', 'Crunch'] },
-    'Zigzagoon': { type: 'Normal', hp: 38, attack: 30, defense: 41, speed: 60, catchRate: 0.75, evolvesTo: 'Linoone', canSpawnWild: true, moves: ['Tackle', 'Headbutt'] },
-    'Linoone': { type: 'Normal', hp: 78, attack: 70, defense: 61, speed: 100, catchRate: 0.0, canSpawnWild: false, moves: ['Headbutt', 'Slash'] },
-    'Wurmple': { type: 'Bug', hp: 45, attack: 45, defense: 35, speed: 20, catchRate: 0.75, evolvesTo: 'Silcoon', canSpawnWild: true, moves: ['Tackle'] },
-    'Silcoon': { type: 'Bug', hp: 50, attack: 35, defense: 55, speed: 15, catchRate: 0.0, evolvesTo: 'Beautifly', canSpawnWild: false, moves: ['Tackle'] },
-    'Beautifly': { type: 'Bug', hp: 60, attack: 70, defense: 50, speed: 65, catchRate: 0.0, canSpawnWild: false, moves: ['Gust', 'Bug Buzz'] },
-    'Lotad': { type: 'Water', hp: 40, attack: 30, defense: 30, speed: 30, catchRate: 0.70, evolvesTo: 'Lombre', canSpawnWild: true, moves: ['Astonish', 'Water Gun'] },
-    'Lombre': { type: 'Water', hp: 60, attack: 50, defense: 50, speed: 50, catchRate: 0.0, evolvesTo: 'Ludicolo', canSpawnWild: false, moves: ['Water Gun', 'Energy Ball'] },
-    'Ludicolo': { type: 'Water', hp: 80, attack: 70, defense: 70, speed: 70, catchRate: 0.0, canSpawnWild: false, moves: ['Energy Ball', 'Hydro Pump'] },
-    'Seedot': { type: 'Grass', hp: 40, attack: 40, defense: 50, speed: 30, catchRate: 0.70, evolvesTo: 'Nuzleaf', canSpawnWild: true, moves: ['Tackle', 'Razor Leaf'] },
-    'Nuzleaf': { type: 'Grass', hp: 70, attack: 70, defense: 40, speed: 60, catchRate: 0.0, evolvesTo: 'Shiftry', canSpawnWild: false, moves: ['Razor Leaf', 'Extrasensory'] },
-    'Shiftry': { type: 'Grass', hp: 90, attack: 100, defense: 60, speed: 80, catchRate: 0.0, canSpawnWild: false, moves: ['Extrasensory', 'Leaf Storm'] },
-    'Ralts': { type: 'Psychic', hp: 28, attack: 25, defense: 25, speed: 40, catchRate: 0.60, evolvesTo: 'Kirlia', canSpawnWild: true, moves: ['Pound', 'Confusion'] },
-    'Kirlia': { type: 'Psychic', hp: 38, attack: 35, defense: 35, speed: 50, catchRate: 0.0, evolvesTo: 'Gardevoir', canSpawnWild: false, moves: ['Confusion', 'Psychic'] },
-    'Gardevoir': { type: 'Psychic', hp: 68, attack: 65, defense: 65, speed: 80, catchRate: 0.0, canSpawnWild: false, moves: ['Psychic', 'Moonblast'] },
-
-    // === GENERASI 4 (SINNOH) ===
-    'Turtwig': { type: 'Grass', hp: 55, attack: 68, defense: 64, speed: 31, catchRate: 0.55, evolvesTo: 'Grotle', canSpawnWild: true, moves: ['Tackle', 'Absorb'] },
-    'Grotle': { type: 'Grass', hp: 75, attack: 89, defense: 85, speed: 36, catchRate: 0.0, evolvesTo: 'Torterra', canSpawnWild: false, moves: ['Absorb', 'Razor Leaf'] },
-    'Torterra': { type: 'Grass', hp: 95, attack: 109, defense: 105, speed: 56, catchRate: 0.0, canSpawnWild: false, moves: ['Razor Leaf', 'Earthquake'] },
-    'Chimchar': { type: 'Fire', hp: 44, attack: 58, defense: 44, speed: 61, catchRate: 0.55, evolvesTo: 'Monferno', canSpawnWild: true, moves: ['Scratch', 'Ember'] },
-    'Monferno': { type: 'Fire', hp: 64, attack: 78, defense: 52, speed: 81, catchRate: 0.0, evolvesTo: 'Infernape', canSpawnWild: false, moves: ['Ember', 'Flame Wheel'] },
-    'Infernape': { type: 'Fire', hp: 76, attack: 104, defense: 71, speed: 108, catchRate: 0.0, canSpawnWild: false, moves: ['Flame Wheel', 'Flare Blitz'] },
-    'Piplup': { type: 'Water', hp: 53, attack: 51, defense: 53, speed: 40, catchRate: 0.55, evolvesTo: 'Prinplup', canSpawnWild: true, moves: ['Pound', 'Water Gun'] },
-    'Prinplup': { type: 'Water', hp: 64, attack: 66, defense: 68, speed: 50, catchRate: 0.0, evolvesTo: 'Empoleon', canSpawnWild: false, moves: ['Water Gun', 'Bubble Beam'] },
-    'Empoleon': { type: 'Water', hp: 84, attack: 86, defense: 88, speed: 60, catchRate: 0.0, canSpawnWild: false, moves: ['Bubble Beam', 'Hydro Pump'] },
-    'Starly': { type: 'Flying', hp: 40, attack: 55, defense: 30, speed: 60, catchRate: 0.75, evolvesTo: 'Staravia', canSpawnWild: true, moves: ['Tackle', 'Wing Attack'] },
-    'Staravia': { type: 'Flying', hp: 55, attack: 75, defense: 50, speed: 80, catchRate: 0.0, evolvesTo: 'Staraptor', canSpawnWild: false, moves: ['Wing Attack', 'Fly'] },
-    'Staraptor': { type: 'Flying', hp: 85, attack: 120, defense: 70, speed: 100, catchRate: 0.0, canSpawnWild: false, moves: ['Fly', 'Brave Bird'] },
-    'Bidoof': { type: 'Normal', hp: 59, attack: 45, defense: 40, speed: 31, catchRate: 0.80, evolvesTo: 'Bibarel', canSpawnWild: true, moves: ['Tackle', 'Headbutt'] },
-    'Bibarel': { type: 'Normal', hp: 79, attack: 85, defense: 60, speed: 71, catchRate: 0.0, canSpawnWild: false, moves: ['Headbutt', 'Take Down'] },
-    'Shinx': { type: 'Electric', hp: 45, attack: 65, defense: 34, speed: 45, catchRate: 0.65, evolvesTo: 'Luxio', canSpawnWild: true, moves: ['Tackle', 'Spark'] },
-    'Luxio': { type: 'Electric', hp: 60, attack: 85, defense: 49, speed: 60, catchRate: 0.0, evolvesTo: 'Luxray', canSpawnWild: false, moves: ['Spark', 'Thunder Fang'] },
-    'Luxray': { type: 'Electric', hp: 80, attack: 120, defense: 79, speed: 70, catchRate: 0.0, canSpawnWild: false, moves: ['Thunder Fang', 'Thunderbolt'] },
-    'Cranidos': { type: 'Rock', hp: 67, attack: 125, defense: 40, speed: 58, catchRate: 0.50, evolvesTo: 'Rampardos', canSpawnWild: true, moves: ['Headbutt', 'Rock Throw'] },
-    'Rampardos': { type: 'Rock', hp: 97, attack: 165, defense: 60, speed: 58, catchRate: 0.0, canSpawnWild: false, moves: ['Rock Throw', 'Stone Edge'] },
-    'Shieldon': { type: 'Rock', hp: 30, attack: 42, defense: 118, speed: 30, catchRate: 0.50, evolvesTo: 'Bastiodon', canSpawnWild: true, moves: ['Tackle', 'Iron Defense'] },
-    'Bastiodon': { type: 'Rock', hp: 60, attack: 52, defense: 168, speed: 30, catchRate: 0.0, canSpawnWild: false, moves: ['Iron Defense', 'Iron Head'] },
-
-    // === GENERASI 5 (UNOVA) ===
-    'Snivy': { type: 'Grass', hp: 45, attack: 45, defense: 55, speed: 63, catchRate: 0.55, evolvesTo: 'Servine', canSpawnWild: true, moves: ['Tackle', 'Vine Whip'] },
-    'Servine': { type: 'Grass', hp: 60, attack: 60, defense: 75, speed: 83, catchRate: 0.0, evolvesTo: 'Serperior', canSpawnWild: false, moves: ['Vine Whip', 'Leaf Blade'] },
-    'Serperior': { type: 'Grass', hp: 75, attack: 75, defense: 95, speed: 113, catchRate: 0.0, canSpawnWild: false, moves: ['Leaf Blade', 'Leaf Storm'] },
-    'Tepig': { type: 'Fire', hp: 65, attack: 63, defense: 45, speed: 45, catchRate: 0.55, evolvesTo: 'Pignite', canSpawnWild: true, moves: ['Tackle', 'Ember'] },
-    'Pignite': { type: 'Fire', hp: 90, attack: 93, defense: 55, speed: 55, catchRate: 0.0, evolvesTo: 'Emboar', canSpawnWild: false, moves: ['Ember', 'Flame Charge'] },
-    'Emboar': { type: 'Fire', hp: 110, attack: 123, defense: 65, speed: 65, catchRate: 0.0, canSpawnWild: false, moves: ['Flame Charge', 'Flare Blitz'] },
-    'Oshawott': { type: 'Water', hp: 55, attack: 55, defense: 45, speed: 45, catchRate: 0.55, evolvesTo: 'Dewott', canSpawnWild: true, moves: ['Tackle', 'Water Gun'] },
-    'Dewott': { type: 'Water', hp: 75, attack: 75, defense: 60, speed: 60, catchRate: 0.0, evolvesTo: 'Samurott', canSpawnWild: false, moves: ['Water Gun', 'Razor Shell'] },
-    'Samurott': { type: 'Water', hp: 95, attack: 100, defense: 85, speed: 70, catchRate: 0.0, canSpawnWild: false, moves: ['Razor Shell', 'Hydro Pump'] },
-    'Patrat': { type: 'Normal', hp: 45, attack: 55, defense: 39, speed: 42, catchRate: 0.75, evolvesTo: 'Watchog', canSpawnWild: true, moves: ['Tackle', 'Bite'] },
-    'Watchog': { type: 'Normal', hp: 60, attack: 85, defense: 69, speed: 77, catchRate: 0.0, canSpawnWild: false, moves: ['Bite', 'Slam'] },
-    'Lillipup': { type: 'Normal', hp: 45, attack: 60, defense: 45, speed: 55, catchRate: 0.70, evolvesTo: 'Herdier', canSpawnWild: true, moves: ['Tackle', 'Bite'] },
-    'Herdier': { type: 'Normal', hp: 65, attack: 80, defense: 65, speed: 60, catchRate: 0.0, evolvesTo: 'Stoutland', canSpawnWild: false, moves: ['Bite', 'Take Down'] },
-    'Stoutland': { type: 'Normal', hp: 85, attack: 110, defense: 90, speed: 80, catchRate: 0.0, canSpawnWild: false, moves: ['Take Down', 'Giga Impact'] },
-    'Purrloin': { type: 'Dark', hp: 41, attack: 50, defense: 37, speed: 66, catchRate: 0.70, evolvesTo: 'Liepard', canSpawnWild: true, moves: ['Scratch', 'Assurance'] },
-    'Liepard': { type: 'Dark', hp: 64, attack: 88, defense: 50, speed: 106, catchRate: 0.0, canSpawnWild: false, moves: ['Assurance', 'Night Slash'] },
-    'Roggenrola': { type: 'Rock', hp: 55, attack: 75, defense: 85, speed: 15, catchRate: 0.65, evolvesTo: 'Boldore', canSpawnWild: true, moves: ['Tackle', 'Rock Throw'] },
-    'Boldore': { type: 'Rock', hp: 70, attack: 105, defense: 105, speed: 20, catchRate: 0.0, evolvesTo: 'Gigalith', canSpawnWild: false, moves: ['Rock Throw', 'Rock Slide'] },
-    'Gigalith': { type: 'Rock', hp: 85, attack: 135, defense: 130, speed: 25, catchRate: 0.0, canSpawnWild: false, moves: ['Rock Slide', 'Stone Edge'] }
-};
-
-const MOVE_DATA = {
-    'Tackle': { power: 40, type: 'Normal' },
-    'Scratch': { power: 40, type: 'Normal' },
-    'Pound': { power: 40, type: 'Normal' },
-    'Quick Attack': { power: 40, type: 'Normal' },
-    'Vine Whip': { power: 45, type: 'Grass' },
-    'Razor Leaf': { power: 55, type: 'Grass' },
-    'Solar Beam': { power: 120, type: 'Grass' },
-    'Ember': { power: 40, type: 'Fire' },
-    'Flamethrower': { power: 90, type: 'Fire' },
-    'Fire Blast': { power: 110, type: 'Fire' },
-    'Water Gun': { power: 40, type: 'Water' },
-    'Hydro Pump': { power: 90, type: 'Water' },
-    'Thunder Shock': { power: 40, type: 'Electric' },
-    'Thunderbolt': { power: 90, type: 'Electric' },
-    'Swift': { power: 60, type: 'Normal' },
-    'Gust': { power: 40, type: 'Flying' },
-    'Wing Attack': { power: 60, type: 'Flying' },
-    'Lick': { power: 30, type: 'Ghost' },
-    'Shadow Ball': { power: 80, type: 'Ghost' },
-    'Dark Pulse': { power: 80, type: 'Dark' },
-    'Karate Chop': { power: 50, type: 'Fighting' },
-    'Cross Chop': { power: 100, type: 'Fighting' },
-    'Skull Bash': { power: 130, type: 'Normal' },
-    'Acid': { power: 40, type: 'Poison' },
-    'Gunk Shot': { power: 120, type: 'Poison' },
-    'Dig': { power: 80, type: 'Ground' },
-    'Earthquake': { power: 100, type: 'Ground' },
-    'Absorb': { power: 20, type: 'Grass' },
-    'Air Cutter': { power: 60, type: 'Flying' },
-    'Air Slash': { power: 75, type: 'Flying' },
-    'Flame Wheel': { power: 60, type: 'Fire' },
-    'Rock Throw': { power: 50, type: 'Rock' },
-    'Stone Edge': { power: 100, type: 'Rock' },
-    'Body Slam': { power: 85, type: 'Normal' },
-    'Eruption': { power: 150, type: 'Fire' },
-    'Crunch': { power: 80, type: 'Dark' },
-    'Slam': { power: 80, type: 'Normal' },
-    'Bug Buzz': { power: 90, type: 'Bug' },
-    'Poison Sting': { power: 15, type: 'Poison' },
-    'Leech Life': { power: 80, type: 'Bug' },
-    'Thunder': { power: 110, type: 'Electric' },
-    'Leaf Blade': { power: 90, type: 'Grass' },
-    'Flame Charge': { power: 50, type: 'Fire' },
-    'Flare Blitz': { power: 120, type: 'Fire' },
-    'Mud Shot': { power: 55, type: 'Ground' },
-    'Bite': { power: 60, type: 'Dark' },
-    'Headbutt': { power: 70, type: 'Normal' },
-    'Energy Ball': { power: 90, type: 'Grass' },
-    'Extrasensory': { power: 80, type: 'Psychic' },
-    'Leaf Storm': { power: 130, type: 'Grass' },
-    'Confusion': { power: 50, type: 'Psychic' },
-    'Psychic': { power: 90, type: 'Psychic' },
-    'Moonblast': { power: 95, type: 'Fairy' },
-    'Bubble Beam': { power: 65, type: 'Water' },
-    'Fly': { power: 90, type: 'Flying' },
-    'Brave Bird': { power: 120, type: 'Flying' },
-    'Take Down': { power: 90, type: 'Normal' },
-    'Spark': { power: 65, type: 'Electric' },
-    'Thunder Fang': { power: 65, type: 'Electric' },
-    'Iron Defense': { power: 0, type: 'Steel' },
-    'Iron Head': { power: 80, type: 'Steel' },
-    'Razor Shell': { power: 75, type: 'Water' },
-    'Giga Impact': { power: 150, type: 'Normal' },
-    'Assurance': { power: 60, type: 'Dark' },
-    'Night Slash': { power: 70, type: 'Dark' },
-    'Rock Slide': { power: 75, type: 'Rock' }
-};
-
-const WILD_SPAWN_LIST = Object.keys(POKEMON_DB).filter(name => POKEMON_DB[name].canSpawnWild === true);
+let sequelize;
+if (process.env.DATABASE_URL) {
+    console.log('[DB ENGINE] Menginisialisasi PostgreSQL Cloud...');
+    sequelize = new Sequelize(process.env.DATABASE_URL, {
+        dialect: 'postgres',
+        logging: false,
+        dialectOptions: { ssl: { require: true, rejectUnauthorized: false } },
+        pool: { max: 15, min: 2, acquire: 30000, idle: 10000 }
+    });
+} else {
+    console.log('[DB ENGINE] DATABASE_URL undefined. Mengaktifkan Fallback SQLite Lokal...');
+    sequelize = new Sequelize({
+        dialect: 'sqlite',
+        storage: 'database.sqlite',
+        logging: false
+    });
+}
 
 // =========================================================================
-// 💾 DATABASE MODEL STRUCTURING (SEQUELIZE POSTGRES OR SQLITE)
+// 📊 DATABASE SCHEMAS
 // =========================================================================
-const sequelize = new Sequelize(process.env.DATABASE_URL, {
-    dialect: 'postgres', logging: false,
-    dialectOptions: { ssl: { require: true, rejectUnauthorized: false } }
+const UserProfile = sequelize.define('UserProfile', {
+    userId: { type: DataTypes.STRING, primaryKey: true, unique: true },
+    credits: { type: DataTypes.BIGINT, defaultValue: 1000 },
+    exp: { type: DataTypes.BIGINT, defaultValue: 0 },
+    level: { type: DataTypes.INTEGER, defaultValue: 1 },
+    caughtCount: { type: DataTypes.INTEGER, defaultValue: 0 },
+    team: { type: DataTypes.STRING, defaultValue: null }, // Menyimpan Aliansi Tim
+    lastDaily: { type: DataTypes.DATE, defaultValue: null },
+    lastHunt: { type: DataTypes.DATE, defaultValue: null }
 });
 
-const Profile = sequelize.define('Profile', {
-    userId: { type: DataTypes.STRING, allowNull: false, unique: true },
-    coins: { type: DataTypes.INTEGER, defaultValue: 1000 },
-    pokeballs: { type: DataTypes.INTEGER, defaultValue: 20 },
-    greatballs: { type: DataTypes.INTEGER, defaultValue: 10 },
-    ultraballs: { type: DataTypes.INTEGER, defaultValue: 3 },
-    masterballs: { type: DataTypes.INTEGER, defaultValue: 0 },
-    lastDailyClaim: { type: DataTypes.DATE, defaultValue: new Date(0) }
-});
-
-const Inventory = sequelize.define('Inventory', {
+const PokemonInventory = sequelize.define('PokemonInventory', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-    userId: { type: DataTypes.STRING, allowNull: false },
-    pokemonName: { type: DataTypes.STRING, allowNull: false },
+    userId: { type: DataTypes.STRING, allowNull: false, index: true },
+    pokemonId: { type: DataTypes.INTEGER, allowNull: false },
+    name: { type: DataTypes.STRING, allowNull: false },
     level: { type: DataTypes.INTEGER, defaultValue: 5 },
     xp: { type: DataTypes.INTEGER, defaultValue: 0 },
-    nature: { type: DataTypes.STRING, defaultValue: 'Hardy' },
+    xpNeeded: { type: DataTypes.INTEGER, defaultValue: 100 },
+    gender: { type: DataTypes.STRING, defaultValue: 'Genderless' },
     isShiny: { type: DataTypes.BOOLEAN, defaultValue: false },
-    ivHp: { type: DataTypes.INTEGER, defaultValue: 15 },
-    ivAttack: { type: DataTypes.INTEGER, defaultValue: 15 },
-    ivDefense: { type: DataTypes.INTEGER, defaultValue: 15 },
-    ivSpeed: { type: DataTypes.INTEGER, defaultValue: 15 }
-});
-
-// =========================================================================
-// 🧮 STATS GENERATOR & ROLE BENEFIT FORMULA CALCULATOR
-// =========================================================================
-function getPokemonStats(pk) {
-    const base = POKEMON_DB[pk.pokemonName] || { hp: 50, attack: 50, defense: 50, speed: 50 };
-    const nature = NATURES[pk.nature] || { buff: null, nerf: null, multiplier: 1.0 };
-    
-    let calculatedHp = Math.floor(((base.hp * 2 + pk.ivHp) * pk.level) / 100) + pk.level + 10;
-    let calculatedAtk = Math.floor(((base.attack * 2 + pk.ivAttack) * pk.level) / 100) + 5;
-    let calculatedDef = Math.floor(((base.defense * 2 + pk.ivDefense) * pk.level) / 100) + 5;
-    let calculatedSpd = Math.floor(((base.speed * 2 + pk.ivSpeed) * pk.level) / 100) + 5;
-
-    if (nature.buff === 'attack') calculatedAtk = Math.floor(calculatedAtk * nature.multiplier);
-    if (nature.buff === 'defense') calculatedDef = Math.floor(calculatedDef * nature.multiplier);
-    if (nature.buff === 'speed') calculatedSpd = Math.floor(calculatedSpd * nature.multiplier);
-    
-    if (nature.nerf === 'attack') calculatedAtk = Math.floor(calculatedAtk * 0.9);
-    if (nature.nerf === 'defense') calculatedDef = Math.floor(calculatedDef * 0.9);
-    if (nature.nerf === 'speed') calculatedSpd = Math.floor(calculatedSpd * 0.9);
-
-    return { maxHp: calculatedHp, attack: calculatedAtk, defense: calculatedDef, speed: calculatedSpd };
-}
-
-function getTypeEffectiveness(atkType, defType) {
-    if (!atkType || !defType) return 1.0;
-    const chart = {
-        'Fire': { 'Grass': 2.0, 'Water': 0.5, 'Fire': 0.5 },
-        'Water': { 'Fire': 2.0, 'Grass': 0.5, 'Water': 0.5 },
-        'Grass': { 'Water': 2.0, 'Fire': 0.5, 'Grass': 0.5 },
-        'Electric': { 'Water': 2.0, 'Grass': 0.5 },
-        'Ghost': { 'Ghost': 2.0, 'Normal': 0.0 },
-        'Fighting': { 'Normal': 2.0, 'Ghost': 0.0 }
-    };
-    return chart[atkType]?.[defType] !== undefined ? chart[atkType][defType] : 1.0;
-}
-
-async function getTrainerBenefits(userId) {
-    const totalCaught = await Inventory.count({ where: { userId } });
-    let bonusCoinMultiplier = 1.0;
-    let bonusCatchRate = 0.0;
-    let currentTier = "Novice Trainer";
-    let targetRoleId = CONFIG_SETUP.ROLES.NOVICE_TRAINER;
-
-    if (totalCaught >= 91) {
-        bonusCoinMultiplier = 1.35;
-        bonusCatchRate = 0.10;
-        currentTier = "Pokémon Champion";
-        targetRoleId = CONFIG_SETUP.ROLES.CHAMPION;
-    } else if (totalCaught >= 51) {
-        bonusCoinMultiplier = 1.20;
-        bonusCatchRate = 0.05;
-        currentTier = "Elite Four";
-        targetRoleId = CONFIG_SETUP.ROLES.ELITE_FOUR;
-    } else if (totalCaught >= 16) {
-        bonusCoinMultiplier = 1.10;
-        bonusCatchRate = 0.0;
-        currentTier = "Gym Challenger";
-        targetRoleId = CONFIG_SETUP.ROLES.GYM_CHALLENGER;
-    }
-
-    return { bonusCoinMultiplier, bonusCatchRate, currentTier, targetRoleId };
-}
-
-async function syncTrainerRole(interaction, userId, targetRoleId) {
-    if (!targetRoleId || targetRoleId.includes('ID_ROLE_')) return;
-    try {
-        const member = await interaction.guild.members.fetch(userId).catch(() => null);
-        if (!member) return;
-
-        if (!member.roles.cache.has(targetRoleId)) {
-            const allTierRoles = Object.values(CONFIG_SETUP.ROLES);
-            for (const roleId of allTierRoles) {
-                if (member.roles.cache.has(roleId) && roleId !== targetRoleId) {
-                    await member.roles.remove(roleId).catch(() => null);
-                }
-            }
-            await member.roles.add(targetRoleId).catch(() => null);
-            logToWeb(`[AUTO-ROLE] Menyinkronkan role pangkat ${member.user.username} ke Database Server.`);
+    // IV Stats (0 - 31)
+    ivHp: { type: DataTypes.INTEGER, defaultValue: () => Math.floor(Math.random() * 32) },
+    ivAtk: { type: DataTypes.INTEGER, defaultValue: () => Math.floor(Math.random() * 32) },
+    ivDef: { type: DataTypes.INTEGER, defaultValue: () => Math.floor(Math.random() * 32) },
+    ivSpAtk: { type: DataTypes.INTEGER, defaultValue: () => Math.floor(Math.random() * 32) },
+    ivSpDef: { type: DataTypes.INTEGER, defaultValue: () => Math.floor(Math.random() * 32) },
+    ivSpeed: { type: DataTypes.INTEGER, defaultValue: () => Math.floor(Math.random() * 32) },
+    ivTotalPercentage: { type: DataTypes.FLOAT, defaultValue: 0.0 },
+    nature: { type: DataTypes.STRING, defaultValue: 'Hardy' }
+}, {
+    hooks: {
+        beforeSave: (pokemon) => {
+            const totalIv = pokemon.ivHp + pokemon.ivAtk + pokemon.ivDef + pokemon.ivSpAtk + pokemon.ivSpDef + pokemon.ivSpeed;
+            pokemon.ivTotalPercentage = parseFloat(((totalIv / 186) * 100).toFixed(2));
         }
-    } catch (err) {
-        console.error("Gagal melakukan sinkronisasi Auto-Role:", err);
+    }
+});
+
+// =========================================================================
+// 🧬 ENCYCLOPEDIA POKEDEX DATA
+// =========================================================================
+const POKEDEX = {
+    1: { name: 'Bulbasaur', catchRate: 45, evo: { level: 16, to: 2 } },
+    2: { name: 'Ivysaur', catchRate: 45, evo: { level: 32, to: 3 } },
+    3: { name: 'Venusaur', catchRate: 45, evo: null },
+    4: { name: 'Charmander', catchRate: 45, evo: { level: 16, to: 5 } },
+    5: { name: 'Charmeleon', catchRate: 45, evo: { level: 36, to: 6 } },
+    6: { name: 'Charizard', catchRate: 45, evo: null },
+    7: { name: 'Squirtle', catchRate: 45, evo: { level: 16, to: 8 } },
+    8: { name: 'Wartortle', catchRate: 45, evo: { level: 36, to: 9 } },
+    9: { name: 'Blastoise', catchRate: 45, evo: null },
+    25: { name: 'Pikachu', catchRate: 190, evo: null }
+};
+
+const NATURES = ['Hardy', 'Lonely', 'Brave', 'Adamant', 'Naughty', 'Bold', 'Docile', 'Relaxed', 'Impish'];
+const ACTIVE_SPAWNS = new Map();
+const TRANSACTION_LOCKS = new Set();
+
+function acquireLock(userId) {
+    if (TRANSACTION_LOCKS.has(userId)) return false;
+    TRANSACTION_LOCKS.add(userId);
+    return true;
+}
+function releaseLock(userId) {
+    TRANSACTION_LOCKS.delete(userId);
+}
+
+// 🎭 AUTOMATIC SWAP ROLE ENGINE (Anti-Double Role)
+async function executeDynamicRoleEngine(member) {
+    try {
+        const totalPokemon = await PokemonInventory.count({ where: { userId: member.id } });
+        const currentRoleIds = member.roles.cache.map(r => r.id);
+        
+        let targetTier = null;
+        for (const tier of CONFIG.ROLE_TIERS) {
+            if (totalPokemon >= tier.min && totalPokemon <= tier.max) {
+                targetTier = tier;
+                break;
+            }
+        }
+        if (!targetTier) return;
+
+        const allSystemRoleIds = CONFIG.ROLE_TIERS.map(t => t.roleId);
+        
+        for (const roleId of allSystemRoleIds) {
+            if (roleId === targetTier.roleId) {
+                if (!currentRoleIds.includes(roleId)) await member.roles.add(roleId);
+            } else {
+                if (currentRoleIds.includes(roleId)) await member.roles.remove(roleId);
+            }
+        }
+    } catch (error) {
+        console.error('[ROLE LOGIC ERROR]', error);
     }
 }
 
 // =========================================================================
-// 🚀 BOT INITIALIZATION & ENGINE DEPLOYMENT
+// 🚀 BOT ENTRYPOINT & COMMAND DEPLOYER
 // =========================================================================
-const client = new Client({ 
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates] 
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-let wildPokemon = null;
+const commandsArray = [
+    new SlashCommandBuilder().setName('starter').setDescription('Pilih Pokemon starter pertamamu')
+        .addStringOption(opt => opt.setName('pokemon').setDescription('Pilihan').setRequired(true)
+            .addChoices({ name: 'Bulbasaur', value: '1' }, { name: 'Charmander', value: '4' }, { name: 'Squirtle', value: '7' })),
+    new SlashCommandBuilder().setName('team').setDescription('Pilih faksi aliansi tim kamu'),
+    new SlashCommandBuilder().setName('bag').setDescription('Buka tas inventaris Pokémon kamu')
+        .addUserOption(opt => opt.setName('target').setDescription('Intip tas trainer lain')),
+    new SlashCommandBuilder().setName('info').setDescription('Lihat status detail dari satu Pokémon')
+        .addIntegerOption(opt => opt.setName('id_unik').setDescription('Masukkan Unique ID Pokémon').setRequired(true)),
+    new SlashCommandBuilder().setName('evolve').setDescription('Evolusikan Pokémon milikmu')
+        .addIntegerOption(opt => opt.setName('id_unik').setDescription('Masukkan Unique ID Pokémon').setRequired(true)),
+    new SlashCommandBuilder().setName('daily').setDescription('Klaim koin harian'),
+    new SlashCommandBuilder().setName('hunt').setDescription('Berburu Pokémon liar di rumput'),
+    new SlashCommandBuilder().setName('trade').setDescription('Barter Pokémon aman antar-pemain')
+        .addUserOption(opt => opt.setName('partner').setDescription('Trainer tujuan').setRequired(true))
+        .addIntegerOption(opt => opt.setName('id_kamu').setDescription('ID Pokémon milikmu').setRequired(true)),
+    new SlashCommandBuilder().setName('battle').setDescription('Sistem Pertarungan Pokémon')
+        .addSubcommand(sub => sub.setName('single').setDescription('PvP 1v1 melawan trainer lain')
+            .addUserOption(opt => opt.setName('lawan').setDescription('Pilih lawan').setRequired(true))
+            .addIntegerOption(opt => opt.setName('id_poke').setDescription('ID Pokémon andalanmu').setRequired(true)))
+        .addSubcommand(sub => sub.setName('boss').setDescription('Ikut Raid Boss Co-Op Server')
+            .addIntegerOption(opt => opt.setName('id_poke').setDescription('ID Pokémon andalanmu').setRequired(true)))
+];
 
 client.once('ready', async () => {
-    logToWeb(`[SYS] Menghubungkan Engine Inti v4 Berhasil.`);
-    await sequelize.sync();
+    console.log(`[CORE] ${client.user.tag} Online.`);
+    await sequelize.sync({ alter: true });
     
-    client.guilds.cache.forEach(guild => updateVoiceCounter(guild));
-
-    // ⏱️ Auto Spawn Mechanism Loop (Setiap 20 Menit Sekali)
-    setInterval(async () => {
-        checkActiveEvent();
-        const randomPokemon = WILD_SPAWN_LIST[Math.floor(Math.random() * WILD_SPAWN_LIST.length)];
-        wildPokemon = randomPokemon;
-        
-        const channel = await client.channels.fetch(CONFIG_SETUP.SPAWN_CHANNEL_ID).catch(() => null);
-        if (channel) {
-            const embed = new EmbedBuilder()
-                .setTitle('🚨 POKÉMON LIAR MUNCUL!')
-                .setDescription(`Seekor wild **${wildPokemon}** meloncat keluar dari semak-semak! Ketik \`/catch\` dengan sigap untuk menangkapnya!`)
-                .setThumbnail('https://i.imgur.com/83pZ70V.png')
-                .setColor('#FF5722')
-                .setFooter({ text: 'Gunakan tipe Bola terbaikmu di channel tall-grass.' });
-            await channel.send({ embeds: [embed] });
-        }
-        logToWeb(`[SPAWN] Sistem melahirkan ${wildPokemon} secara otomatis.`);
-    }, CONFIG_SETUP.SPAWN_INTERVAL);
-
-    // Registering Slash Commands
-    const commands = [
-        new SlashCommandBuilder().setName('bag').setDescription('🎒 Cek isi dompet, item bola, dan koleksi lengkap monster milikmu'),
-        new SlashCommandBuilder().setName('daily').setDescription('🎁 Klaim tunjangan koin dan bonus gacha bola harian gratisanmu'),
-        new SlashCommandBuilder().setName('leaderboard').setDescription('🏆 Lihat daftar 5 Trainer terkaya se-jagat raya'),
-        new SlashCommandBuilder().setName('release').setDescription('🍂 Bebaskan Pokémon ke alam bebas untuk mencairkan santunan uang koin')
-            .addIntegerOption(o => o.setName('id').setDescription('ID target Pokémon').setRequired(true)),
-        new SlashCommandBuilder().setName('evolve').setDescription('🔺 Picu mutasi evolusi Pokémon yang telah menyentuh batas standar (Lv. 16+)')
-            .addIntegerOption(o => o.setName('id').setDescription('ID target Pokémon').setRequired(true)),
-        new SlashCommandBuilder().setName('starter').setDescription('🎟️ Pilih dan klaim Pokémon starter pertamamu seumur hidup sekali')
-            .addStringOption(o => o.setName('pokemon').setDescription('Pilih partner Pokémon awalmu').setRequired(true).addChoices(
-                { name: 'Bulbasaur (Grass)', value: 'Bulbasaur' }, { name: 'Charmander (Fire)', value: 'Charmander' }, { name: 'Squirtle (Water)', value: 'Squirtle' },
-                { name: 'Chikorita (Grass)', value: 'Chikorita' }, { name: 'Cyndaquil (Fire)', value: 'Cyndaquil' }, { name: 'Totodile (Water)', value: 'Totodile' },
-                { name: 'Treecko (Grass)', value: 'Treecko' }, { name: 'Torchic (Fire)', value: 'Torchic' }, { name: 'Mudkip (Water)', value: 'Mudkip' }
-            )),
-        new SlashCommandBuilder().setName('shop').setDescription('🛒 Kunjungi Mall Pasar Global Pokémon')
-            .addSubcommand(sub => sub.setName('list').setDescription('Tampilkan daftar katalog barang dagangan'))
-            .addSubcommand(sub => sub.setName('buy').setDescription('Beli item pilihanmu')
-                .addStringOption(o => o.setName('item').setDescription('Item yang dibeli').setRequired(true).addChoices(
-                    { name: '🔴 Pokéball (200 koin)', value: 'pokeballs' }, { name: '🔵 Great Ball (500 koin)', value: 'greatballs' },
-                    { name: '⚫ Ultra Ball (1200 koin)', value: 'ultraballs' }, { name: '🟡 Master Ball (5000 koin)', value: 'masterballs' }
-                ))
-                .addIntegerOption(o => o.setName('jumlah').setDescription('Kuantitas jumlah').setRequired(true))),
-        new SlashCommandBuilder().setName('catch').setDescription('🔴 Lempar bola pilihanmu ke Pokémon liar yang sedang aktif saat ini')
-            .addStringOption(o => o.setName('nama').setDescription('Nama target monster liar').setRequired(true))
-            .addStringOption(o => o.setName('ball').setDescription('Jenis bola yang ingin dilemparkan').setRequired(true).addChoices(
-                { name: '🔴 Pokéball', value: 'pokeballs' }, { name: '🔵 Great Ball', value: 'greatballs' },
-                { name: '⚫ Ultra Ball', value: 'ultraballs' }, { name: '🟡 Master Ball', value: 'masterballs' }
-            )),
-        new SlashCommandBuilder().setName('battle').setDescription('⚔️ Tantang Trainer lain untuk bertarung multi-turn real-time')
-            .addUserOption(o => o.setName('lawan').setDescription('Akun target lawan').setRequired(true))
-            .addIntegerOption(o => o.setName('id_pokemon').setDescription('ID Unik Pokémon jagoanmu').setRequired(true)),
-
-        // Admin Commands
-        new SlashCommandBuilder().setName('admin-give-coin').setDescription('👑 [ADMIN] Alirkan dana koin gaib ke dompet member')
-            .addUserOption(o => o.setName('target').setRequired(true)).addIntegerOption(o => o.setName('jumlah').setRequired(true))
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-        new SlashCommandBuilder().setName('admin-give-ball').setDescription('👑 [ADMIN] Pasok suplai muatan bola ilegal ke pemain')
-            .addUserOption(o => o.setName('target').setRequired(true))
-            .addStringOption(o => o.setName('ball').setRequired(true).addChoices(
-                { name: 'Pokéball', value: 'pokeballs' }, { name: 'Great Ball', value: 'greatballs' },
-                { name: 'Ultra Ball', value: 'ultraballs' }, { name: 'Master Ball', value: 'masterballs' }
-            )).addIntegerOption(o => o.setName('jumlah').setRequired(true))
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-        new SlashCommandBuilder().setName('admin-spawn-manual').setDescription('👑 [ADMIN] Paksa kelahiran monster spesifik seketika itu juga')
-            .addStringOption(o => o.setName('pokemon').setRequired(true))
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-        new SlashCommandBuilder().setName('admin-clear-wild').setDescription('👑 [ADMIN] Bersihkan area panggung spawn liar')
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-        new SlashCommandBuilder().setName('admin-set-event').setDescription('👑 [ADMIN] Deklarasikan status Event Global Server')
-            .addStringOption(o => o.setName('nama').setRequired(true))
-            .addStringOption(o => o.setName('tipe').setRequired(true).addChoices(
-                { name: 'Double Coins Extravaganza', value: 'DOUBLE_COIN' }, { name: 'Shiny Paradise Event', value: 'DOUBLE_SHINY' }
-            )).addIntegerOption(o => o.setName('durasi').setDescription('Waktu dalam satuan Menit').setRequired(true))
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-        new SlashCommandBuilder().setName('admin-wipe-user').setDescription('👑 [ADMIN] Hapus total data profile & inventory target user (PERMANEN)')
-            .addUserOption(o => o.setName('target').setRequired(true))
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-        new SlashCommandBuilder().setName('admin-gift-all').setDescription('👑 [ADMIN] Bagikan koin gratis gratis ke seluruh database member')
-            .addIntegerOption(o => o.setName('jumlah').setRequired(true))
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    ];
-
-    const rest = new (require('@discordjs/rest').REST)({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    try { 
-        await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); 
-        logToWeb(`[SYS] Berhasil mendaftarkan seluruh paket Slash Commands baru.`);
-    } catch (e) { 
-        console.error("Gagal melakukan registrasi command:", e); 
+    try {
+        const rest = new REST({ version: '10' }).setToken(CONFIG.TOKEN);
+        await rest.put(Routes.applicationCommands(CONFIG.CLIENT_ID), { body: commandsArray });
+        console.log('[SLASH] Pendaftaran seluruh fitur commands sukses!');
+    } catch (err) {
+        console.error('[DEPLOY ERROR]', err);
     }
 });
 
 // =========================================================================
-// 🎙️ VOICE STATE UPDATER (MONITOR AKTIVITAS CONCURRENT)
-// =========================================================================
-client.on('voiceStateUpdate', (oldState, newState) => {
-    const guild = newState.guild || oldState.guild;
-    if (guild) updateVoiceCounter(guild);
-});
-
-// =========================================================================
-// 📥 COMMAND CENTRAL EXECUTIVE ROUTER
+// 📥 MASTER CORE CORE EXECUTIVE HANDLING INTERACTION
 // =========================================================================
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
-    const { commandName, user, options } = interaction;
+    const { commandName, user, guild, options } = interaction;
+    if (!guild) return interaction.reply({ content: 'Gunakan di dalam server!', ephemeral: true });
 
-    if (!acquireLock(user.id)) {
-        return interaction.reply({ content: '❌ **Anti-Cheat Guard:** Aksimu terlalu cepat! Harap tunggu antrean proses database selesai.', ephemeral: true });
-    }
+    if (!acquireLock(user.id)) return interaction.reply({ content: '⏳ Selesaikan aksi sebelumnya terlebih dahulu!', ephemeral: true });
 
-    const isEphemeral = (commandName === 'bag' || commandName === 'shop' || commandName === 'starter');
-    await interaction.deferReply({ ephemeral: isEphemeral });
-    const t = await sequelize.transaction();
+    const isPrivate = ['bag', 'info'].includes(commandName);
+    await interaction.deferReply({ ephemeral: isPrivate });
+
+    const transaction = await sequelize.transaction();
 
     try {
-        const [userProf] = await Profile.findOrCreate({ where: { userId: user.id }, transaction: t });
+        const [profile] = await UserProfile.findOrCreate({ where: { userId: user.id }, transaction });
 
+        // 🛡️ SECURITY GUARD LAYER: Kunci seluruh command jika belum klaim starter
+        if (commandName !== 'starter') {
+            const hasPokemon = await PokemonInventory.findOne({ where: { userId: user.id }, transaction });
+            if (!hasPokemon) {
+                await transaction.rollback(); releaseLock(user.id);
+                return interaction.editReply('❌ **Akses Ditolak!** Kamu wajib mengambil Pokémon starter pertamamu terlebih dahulu via command `/starter`!');
+            }
+        }
+
+        const member = await guild.members.fetch(user.id);
+
+        // [1] STARTER COMMAND
         if (commandName === 'starter') {
-            if (interaction.channelId !== CONFIG_SETUP.CLAIM_STARTER_CHANNEL_ID) {
-                await t.rollback(); releaseLock(user.id);
-                return interaction.editReply(`❌ Kamu hanya bisa mengklaim starter di channel <#${CONFIG_SETUP.CLAIM_STARTER_CHANNEL_ID}>!`);
+            const checking = await PokemonInventory.findOne({ where: { userId: user.id }, transaction });
+            if (checking) {
+                await transaction.rollback(); releaseLock(user.id);
+                return interaction.editReply('❌ Kamu sudah memiliki Pokémon starter.');
             }
 
-            const hasPokemon = await Inventory.findOne({ where: { userId: user.id }, transaction: t });
-            if (hasPokemon) {
-                await t.rollback(); releaseLock(user.id);
-                return interaction.editReply(`❌ Kamu sudah memulai petualanganmu! Kamu tidak bisa mengklaim Pokémon starter lagi.`);
+            const pDexId = parseInt(options.getString('pokemon'));
+            const dataP = POKEDEX[pDexId];
+
+            const added = await PokemonInventory.create({
+                userId: user.id, pokemonId: pDexId, name: dataP.name, level: 5,
+                gender: Math.random() > 0.5 ? 'Male' : 'Female', isShiny: Math.random() < 0.01,
+                nature: NATURES[Math.floor(Math.random() * NATURES.length)]
+            }, { transaction });
+
+            await transaction.commit(); releaseLock(user.id);
+            await executeDynamicRoleEngine(member);
+
+            return interaction.editReply(`🎉 Selamat <@${user.id}>! Kamu memulai petualangan bersama **${added.name}** (Lv. 5)!`);
+        }
+
+        // [2] TEAM SELECTION COMMAND
+        if (commandName === 'team') {
+            if (profile.team) {
+                await transaction.rollback(); releaseLock(user.id);
+                return interaction.editReply(`❌ Kamu sudah bergabung di **Team ${profile.team.toUpperCase()}**.`);
             }
-
-            const chosenPokemon = options.getString('pokemon');
-            const listNature = Object.keys(NATURES);
-            const pickedNature = listNature[Math.floor(Math.random() * listNature.length)];
-
-            await Inventory.create({ 
-                userId: user.id, pokemonName: chosenPokemon, isShiny: false, 
-                nature: pickedNature, level: 5, ivHp: Math.floor(Math.random() * 32), 
-                ivAttack: Math.floor(Math.random() * 32), ivDefense: Math.floor(Math.random() * 32), ivSpeed: Math.floor(Math.random() * 32) 
-            }, { transaction: t });
-
-            userProf.coins += 500;
-            await userProf.save({ transaction: t });
-            await t.commit();
-
-            logToWeb(`[STARTER] ${user.username} memilih ${chosenPokemon} sebagai partner pertamanya.`);
-            releaseLock(user.id);
-
-            const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-            if (member && !CONFIG_SETUP.ROLES.NOVICE_TRAINER.includes('ID_ROLE_')) {
-                await member.roles.add(CONFIG_SETUP.ROLES.NOVICE_TRAINER).catch(() => null);
-            }
-
-            return interaction.editReply(`🎉 **Selamat Datang di Dunia Pokémon, ${user.username}!** 🎉\n\nKamu berhasil memilih **${chosenPokemon}** (Lv. 5)!\n🎒 Kamu kini resmi menjadi \`Novice Trainer\` dan mendapatkan modal awal 🪙 \`500 Koin\`.`);
-        }
-
-        if (commandName === 'bag') {
-            const bag = await Inventory.findAll({ where: { userId: user.id }, transaction: t });
-            await t.commit();
-            
-            let pText = bag.length === 0 ? '*Kosong Melongpong, ketik /starter terlebih dahulu*' : bag.map(p => {
-                const s = getPokemonStats(p);
-                return `• **ID: \`${p.id}\`** | ${p.isShiny ? '✨ ' : ''}**${p.pokemonName}** (Lv. ${p.level})\n  ↳ *Nature:* \`${p.nature}\` | *IV:* \`HP:${p.ivHp} A:${p.ivAttack} D:${p.ivDefense} S:${p.ivSpeed}\` | *MaxHP:* \`${s.maxHp}\``;
-            }).join('\n');
-
-            const embed = new EmbedBuilder().setTitle(`🎒 Tas Utama Trainer: ${user.username}`).setColor('#1e88e5')
-                .addFields(
-                    { name: '🪙 Tabungan Finansial', value: `\`${userProf.coins} Koin\``, inline: false },
-                    { name: '📦 Amunisi Kantong Bola', value: `🔴 Pokéball: \`${userProf.pokeballs}\` | 🔵 Great: \`${userProf.greatballs}\` | ⚫ Ultra: \`${userProf.ultraballs}\` | 🟡 Master: \`${userProf.masterballs}\``, inline: false },
-                    { name: '🐉 Monster Peliharaan', value: pText, inline: false }
-                );
-
-            releaseLock(user.id);
-            return interaction.editReply({ embeds: [embed] });
-        }
-
-        if (commandName === 'daily') {
-            const cooldown = 24 * 60 * 60 * 1000;
-            const lastClaim = new Date(userProf.lastDailyClaim).getTime();
-
-            if (Date.now() - lastClaim < cooldown) {
-                const sisa = cooldown - (Date.now() - lastClaim);
-                const jam = Math.floor(sisa / (1000 * 60 * 60));
-                const menit = Math.floor((sisa % (1000 * 60 * 60)) / (1000 * 60));
-                await t.rollback(); releaseLock(user.id);
-                return interaction.editReply(`⏳ Kamu sudah mengambil jatah harianmu. Kembali lagi dalam **${jam} jam ${menit} menit**.`);
-            }
-
-            const coinDapat = Math.floor(Math.random() * 500) + 500;
-            userProf.coins += coinDapat;
-            userProf.pokeballs += 5;
-            userProf.greatballs += 2;
-            userProf.lastDailyClaim = new Date();
-
-            await userProf.save({ transaction: t });
-            await t.commit();
-
-            logToWeb(`[DAILY] ${user.username} mengklaim hadiah harian.`);
-            releaseLock(user.id);
-            return interaction.editReply(`🎁 **DAILY REWARDS:** Berhasil mengklaim jatah hari ini!\n• \`+${coinDapat} Koin\`\n• \`+5x Pokéball\`\n• \`+2x Great Ball\``);
-        }
-
-        if (commandName === 'shop') {
-            const sub = options.getSubcommand();
-
-            if (sub === 'list') {
-                await t.commit();
-                const embed = new EmbedBuilder().setTitle('🛒 PASAR GLOBAL RIFT POKÉSHOP').setColor('#4caf50')
-                    .setDescription('Gunakan perintah `/shop buy [nama_item] [jumlah]` untuk transaksi.')
-                    .addFields(
-                        { name: '🔴 Pokéball', value: `Harga: \`200 Koin\``, inline: true },
-                        { name: '🔵 Great Ball', value: `Harga: \`500 Koin\``, inline: true },
-                        { name: '⚫ Ultra Ball', value: `Harga: \`1200 Koin\``, inline: true },
-                        { name: '🟡 Master Ball', value: `Harga: \`5000 Koin\``, inline: true }
-                    );
-                releaseLock(user.id);
-                return interaction.editReply({ embeds: [embed] });
-            }
-
-            if (sub === 'buy') {
-                const itemType = options.getString('item');
-                const qty = options.getInteger('jumlah');
-
-                if (qty <= 0) {
-                    await t.rollback(); releaseLock(user.id);
-                    return interaction.editReply('❌ Kuantitas pesanan pembelian tidak valid.');
-                }
-
-                const totalCost = BALL_SETTINGS[itemType].price * qty;
-                if (userProf.coins < totalCost) {
-                    await t.rollback(); releaseLock(user.id);
-                    return interaction.editReply(`❌ Koin saldo kamu tidak memadai. Total tagihan belanja: \`${totalCost} Koin\`.`);
-                }
-
-                userProf.coins -= totalCost;
-                userProf[itemType] += qty;
-
-                await userProf.save({ transaction: t });
-                await t.commit();
-
-                logToWeb(`[SHOP] ${user.username} membeli ${qty}x ${itemType}.`);
-                releaseLock(user.id);
-                return interaction.editReply(`🛒 **Transaksi Sukses!** Berhasil membeli **${qty}x ${BALL_SETTINGS[itemType].name}** seharga \`${totalCost} Koin\`.`);
-            }
-        }
-
-        if (commandName === 'catch') {
-            const pokeTarget = options.getString('nama');
-            const ballSelected = options.getString('ball');
-
-            if (!wildPokemon || wildPokemon.toLowerCase() !== pokeTarget.toLowerCase()) {
-                await t.rollback(); releaseLock(user.id);
-                return interaction.editReply('❌ Target Pokémon salah, atau barangkali monster tersebut sudah lelah dan kabur.');
-            }
-
-            if (userProf[ballSelected] <= 0) {
-                await t.rollback(); releaseLock(user.id);
-                return interaction.editReply(`❌ Kamu kehabisan item amunisi **${BALL_SETTINGS[ballSelected].name}**.`);
-            }
-
-            userProf[ballSelected] -= 1;
-            const benefits = await getTrainerBenefits(user.id);
-            const baseChance = POKEMON_DB[wildPokemon]?.catchRate || 0.50;
-            const absoluteChance = baseChance + BALL_SETTINGS[ballSelected].rateBonus + benefits.bonusCatchRate;
-
-            if (Math.random() <= absoluteChance) {
-                const isShiny = Math.random() <= (ACTIVE_EVENT.type === "DOUBLE_SHINY" ? 0.22 : 0.05);
-                const listNature = Object.keys(NATURES);
-                const pickedNature = listNature[Math.floor(Math.random() * listNature.length)];
-
-                await Inventory.create({ 
-                    userId: user.id, pokemonName: wildPokemon, isShiny, 
-                    nature: pickedNature, level: 5, ivHp: Math.floor(Math.random() * 32), 
-                    ivAttack: Math.floor(Math.random() * 32), ivDefense: Math.floor(Math.random() * 32), ivSpeed: Math.floor(Math.random() * 32) 
-                }, { transaction: t });
-
-                let baseCash = ACTIVE_EVENT.type === "DOUBLE_COIN" ? 300 : 150;
-                let bonusCash = Math.floor(baseCash * benefits.bonusCoinMultiplier);
-                userProf.coins += bonusCash;
-
-                await userProf.save({ transaction: t });
-                await t.commit();
-
-                logToWeb(`[CATCH] ${user.username} menangkap ${wildPokemon}.`);
-                wildPokemon = null; 
-                releaseLock(user.id);
-
-                await syncTrainerRole(interaction, user.id, benefits.targetRoleId);
-                return interaction.editReply(`🎉 **TARGET AMAN TERTANGKAP!** Kamu mendapatkan **${pokeTarget}** ${isShiny ? '(✨ SHINY!)' : ''}.\n• Pangkat: \`${benefits.currentTier}\`\n• Hadiah: \`+${bonusCash} Koin\`\n• Sifat Nature: \`${pickedNature}\``);
-            } else {
-                await userProf.save({ transaction: t });
-                await t.commit();
-                releaseLock(user.id);
-                return interaction.editReply(`💨 Ah sial! **${pokeTarget}** berhasil meronta lolos dari kurungan bola lalu kabur.`);
-            }
-        }
-
-        if (commandName === 'release') {
-            const targetId = options.getInteger('id');
-            const targetMonster = await Inventory.findOne({ where: { id: targetId, userId: user.id }, transaction: t });
-
-            if (!targetMonster) {
-                await t.rollback(); releaseLock(user.id);
-                return interaction.editReply('❌ Gagal mendeteksi ketersediaan monster dengan ID tersebut di kantongmu.');
-            }
-
-            await targetMonster.destroy({ transaction: t });
-            userProf.coins += 120;
-            await userProf.save({ transaction: t });
-            await t.commit();
-
-            logToWeb(`[RELEASE] ${user.username} melepas ID ${targetId}.`);
-            releaseLock(user.id);
-            return interaction.editReply(`🍂 Berhasil melepas **${targetMonster.pokemonName}** kembali ke alam bebas. Dapat kompensasi \`+120 Koin\`.`);
-        }
-
-        if (commandName === 'leaderboard') {
-            await t.commit();
-            const topFive = await Profile.findAll({ order: [['coins', 'DESC']], limit: 5 });
-            let boardStr = topFive.map((p, index) => `**${index + 1}.** <@${p.userId}> ⌙ Saldo: \`${p.coins} Koin\``).join('\n');
-            releaseLock(user.id);
-            return interaction.editReply({ embeds: [new EmbedBuilder().setTitle('🏆 SINGGASANA 5 TRAINER TERKAYA').setDescription(boardStr || '*Kosong*').setColor('#fbc02d')] });
-        }
-
-        if (commandName === 'evolve') {
-            const idTarget = options.getInteger('id');
-            const targetPoke = await Inventory.findOne({ where: { id: idTarget, userId: user.id }, transaction: t });
-
-            if (!targetPoke) { await t.rollback(); releaseLock(user.id); return interaction.editReply('❌ ID Pokémon tidak ditemukan.'); }
-            if (targetPoke.level < 16) { await t.rollback(); releaseLock(user.id); return interaction.editReply('❌ Batas energi tidak mumpuni. Syarat evolusi adalah Level 16.'); }
-
-            const staticMeta = POKEMON_DB[targetPoke.pokemonName];
-            if (!staticMeta || !staticMeta.evolvesTo) { await t.rollback(); releaseLock(user.id); return interaction.editReply('❌ Monster ini sudah menetap di fase puncak final evolusi.'); }
-
-            const wujudLama = targetPoke.pokemonName;
-            targetPoke.pokemonName = staticMeta.evolvesTo;
-            await targetPoke.save({ transaction: t });
-            await t.commit();
-
-            logToWeb(`[EVOLVE] ${user.username} mengevolusikan ${wujudLama}.`);
-            releaseLock(user.id);
-            return interaction.editReply(`🔺 **MUTASI EVOLUSI SPEKTAKULER!** **${wujudLama}** milikmu bermutasi menjadi **${targetPoke.pokemonName}**!`);
-        }
-
-        // =========================================================================
-        // 👑 ADMIN ACTIONS HANDLING
-        // =========================================================================
-        if (commandName === 'admin-give-coin') {
-            const target = options.getUser('target');
-            const amount = options.getInteger('jumlah');
-            const [profTarget] = await Profile.findOrCreate({ where: { userId: target.id }, transaction: t });
-
-            profTarget.coins += amount;
-            await profTarget.save({ transaction: t });
-            await t.commit();
-
-            logToWeb(`[ADMIN] ${user.username} menyuntik koin ke ${target.username}.`);
-            releaseLock(user.id);
-            return interaction.editReply(`👑 **ADMINISTRATOR:** Berhasil memanipulasi koin gaib sebesar \`${amount}\` ke dompet ${target}.`);
-        }
-
-        if (commandName === 'admin-give-ball') {
-            const target = options.getUser('target');
-            const jenisBall = options.getString('ball');
-            const jumlahBall = options.getInteger('jumlah');
-            const [profTarget] = await Profile.findOrCreate({ where: { userId: target.id }, transaction: t });
-
-            profTarget[jenisBall] += jumlahBall;
-            await profTarget.save({ transaction: t });
-            await t.commit();
-
-            logToWeb(`[ADMIN] ${user.username} menyuplai item ke ${target.username}.`);
-            releaseLock(user.id);
-            return interaction.editReply(`👑 **ADMINISTRATOR:** Memasok sebanyak \`${jumlahBall}x\` ${BALL_SETTINGS[jenisBall].name} ke dalam tas milik ${target}.`);
-        }
-
-        if (commandName === 'admin-spawn-manual') {
-            const namaPk = options.getString('pokemon');
-            const matchedKey = Object.keys(POKEMON_DB).find(k => k.toLowerCase() === namaPk.toLowerCase());
-
-            if (!matchedKey) { await t.rollback(); releaseLock(user.id); return interaction.editReply('❌ Nama Pokémon tersebut tidak dikenali oleh database.'); }
-
-            wildPokemon = matchedKey;
-            await t.commit();
-
-            logToWeb(`[ADMIN] ${user.username} memaksa melahirkan ${wildPokemon}.`);
-            releaseLock(user.id);
-            return interaction.editReply(`👑 **ADMINISTRATOR:** Berhasil memaksa gerbang portal terbuka, **${wildPokemon}** keluar sekarang!`);
-        }
-
-        if (commandName === 'admin-clear-wild') {
-            wildPokemon = null;
-            await t.commit();
-            logToWeb(`[ADMIN] ${user.username} mengosongkan zona semak liar.`);
-            releaseLock(user.id);
-            return interaction.editReply('👑 **ADMINISTRATOR:** Area dibersihkan, Pokémon liar yang berkeliaran dihanguskan.');
-        }
-
-        if (commandName === 'admin-set-event') {
-            const namaEv = options.getString('nama');
-            const tipeEv = options.getString('tipe');
-            const durasiEv = options.getInteger('durasi');
-
-            ACTIVE_EVENT = { name: namaEv, type: tipeEv, multiplier: 2.0, endAt: Date.now() + (durasiEv * 60 * 1000) };
-            await t.commit();
-
-            logToWeb(`[ADMIN] Mengumumkan Event Server: ${namaEv}`);
-            releaseLock(user.id);
-            return interaction.editReply(`📢 **GLOBAL STATE UPDATED:** Event **${namaEv}** resmi aktif untuk \`${durasiEv} Menit\` ke depan!`);
-        }
-
-        if (commandName === 'admin-wipe-user') {
-            const target = options.getUser('target');
-            await Inventory.destroy({ where: { userId: target.id }, transaction: t });
-            await Profile.destroy({ where: { userId: target.id }, transaction: t });
-            await t.commit();
-
-            logToWeb(`[ADMIN WIPE] Akun data ${target.username} dihancurkan total.`);
-            releaseLock(user.id);
-            return interaction.editReply(`⚠️ **DANGER ZONE WIPE:** Seluruh berkas profile koin dan data peliharaan milik ${target} telah dihapus permanen.`);
-        }
-
-        if (commandName === 'admin-gift-all') {
-            const nominal = options.getInteger('jumlah');
-            await Profile.increment({ coins: nominal }, { where: {}, transaction: t });
-            await t.commit();
-
-            logToWeb(`[ADMIN GLOBAL] Pembagian subsidi ${nominal} koin masal.`);
-            releaseLock(user.id);
-            return interaction.editReply(`👑 **ADMINISTRATOR MASAL:** Berhasil membagikan koin gratis senilai \`${nominal}\` ke seluruh user.`);
-        }
-
-        if (commandName === 'battle') {
-            const targetLawan = options.getUser('lawan');
-            const idSaya = options.getInteger('id_pokemon');
-
-            if (targetLawan.id === user.id) {
-                await t.rollback(); releaseLock(user.id);
-                return interaction.editReply('❌ Kamu tidak bisa bertarung melawan dirimu sendiri.');
-            }
-
-            const pokeSaya = await Inventory.findOne({ where: { id: idSaya, userId: user.id }, transaction: t });
-            const listPokeLawan = await Inventory.findAll({ where: { userId: targetLawan.id }, transaction: t });
-            await t.commit();
-
-            if (!pokeSaya) { releaseLock(user.id); return interaction.editReply('❌ Gagal menarik berkas data Pokémon andalanmu.'); }
-            if (listPokeLawan.length === 0) { releaseLock(user.id); return interaction.editReply('❌ Pihak lawan tidak memiliki modal satu pun monster untuk bertarung.'); }
-
-            const dropDownMenus = listPokeLawan.slice(0, 25).map(p => ({
-                label: `${p.pokemonName} (Lv. ${p.level}) — IV Atk: ${p.ivAttack}`,
-                value: `rft_opp_${p.id}`
-            }));
-
-            const barisKomponen = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId(`pvp_stage_${user.id}_${targetLawan.id}_${idSaya}`)
-                    .setPlaceholder('Pilih monster andalanmu untuk membalas tantangan')
-                    .addOptions(dropDownMenus)
+            await transaction.commit(); releaseLock(user.id);
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('team_valor').setLabel('🔥 VALOR').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId('team_mystic').setLabel('❄️ MYSTIC').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId('team_instinct').setLabel('⚡ INSTINCT').setStyle(ButtonStyle.Warning)
             );
 
-            releaseLock(user.id);
-            return interaction.editReply({ 
-                content: `⚔️ **DEKLARASI DUEL ARENA:** ${user} menantang duel maut kepada ${targetLawan}! Silakan pihak target menekan menu di bawah ini:`, 
-                components: [barisKomponen] 
+            const msg = await interaction.editReply({ content: '📊 **PILIH FRAKSI TIM KAMU**:', components: [row] });
+            const col = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 20000 });
+            col.on('collect', async b => {
+                if (b.user.id !== user.id) return b.reply({ content: 'Bukan pilihanmu', ephemeral: true });
+                await b.deferUpdate();
+                const selected = b.customId.replace('team_', '');
+                await UserProfile.update({ team: selected }, { where: { userId: user.id } });
+                col.stop();
+                return interaction.editReply({ content: `🎉 Kamu resmi bergabung dengan **TEAM ${selected.toUpperCase()}**!`, components: [] });
             });
         }
 
-    } catch (e) {
-        if (t) await t.rollback();
-        releaseLock(user.id);
-        console.error("Kesalahan fatal dalam penanganan interaksi utama:", e);
-        return interaction.editReply('❌ Sistem Internal mendeteksi adanya malfungsi kegagalan kueri.');
-    }
-});
+        // [3] BAG COMMAND
+        if (commandName === 'bag') {
+            const target = options.getUser('target') || user;
+            const targetProfile = await UserProfile.findOne({ where: { userId: target.id }, transaction });
+            if (!targetProfile) {
+                await transaction.rollback(); releaseLock(user.id);
+                return interaction.editReply('❌ Target belum terdaftar.');
+            }
 
-// =========================================================================
-// ⚔️ SIMULASI PERTARUNGAN INTERAKTIF ENGINE PVP MULTI-TURN
-// =========================================================================
-client.on('interactionCreate', async selectInter => {
-    if (!selectInter.isStringSelectMenu() || !selectInter.customId.startsWith('pvp_stage_')) return;
-    
-    const [,, p1Id, p2Id, poke1DbId] = selectInter.customId.split('_');
-    if (selectInter.user.id !== p2Id) {
-        return selectInter.reply({ content: '❌ Kamu bukan target yang diundang di dalam pvp duel ini!', ephemeral: true });
-    }
+            const pokes = await PokemonInventory.findAll({ where: { userId: target.id }, transaction });
+            await transaction.commit(); releaseLock(user.id);
 
-    await selectInter.deferReply();
+            const embed = new EmbedBuilder().setTitle(`💼 Tas Inventaris ${target.username}`).setColor('#3498db');
+            let txt = '';
+            pokes.forEach(p => { txt += `\`ID: ${p.id}\` — ${p.isShiny ? '✨ ' : ''}**${p.name}** (Lv. ${p.level}) [IV: ${p.ivTotalPercentage}%]\n`; });
+            embed.setDescription(txt || 'Tas Kosong.');
+            return interaction.editReply({ embeds: [embed] });
+        }
 
-    const poke2DbId = selectInter.values[0].replace('rft_opp_', '');
-    const ksatria1 = await Inventory.findByPk(poke1DbId);
-    const ksatria2 = await Inventory.findByPk(poke2DbId);
+        // [4] INFO COMMAND
+        if (commandName === 'info') {
+            const uid = options.getInteger('id_unik');
+            const pk = await PokemonInventory.findOne({ where: { id: uid, userId: user.id }, transaction });
+            if (!pk) {
+                await transaction.rollback(); releaseLock(user.id);
+                return interaction.editReply('❌ Pokémon tidak ditemukan.');
+            }
+            await transaction.commit(); releaseLock(user.id);
 
-    if (!ksatria1 || !ksatria2) {
-        return selectInter.editReply('❌ Sesi duel batal dikarenakan salah satu entitas monster dipindahkan/dihapus.');
-    }
+            const embed = new EmbedBuilder().setTitle(`${pk.isShiny ? '✨ ' : ''}${pk.name} (#${pk.id})`).setColor('#2ecc71')
+                .addFields(
+                    { name: 'Detail', value: `Level: \`${pk.level}\`\nGender: \`${pk.gender}\`\nNature: \`${pk.nature}\``, inline: true },
+                    { name: 'Individual Values', value: `HP: \`${pk.ivHp}/31\`\nAtk: \`${pk.ivAtk}/31\`\nDef: \`${pk.ivDef}/31\`\n**Akumulasi:** \`${pk.ivTotalPercentage}%\``, inline: true }
+                );
+            return interaction.editReply({ embeds: [embed] });
+        }
 
-    let stats1 = getPokemonStats(ksatria1);
-    let stats2 = getPokemonStats(ksatria2);
+        // [5] HUNT COMMAND
+        if (commandName === 'hunt') {
+            const now = new Date();
+            if (profile.lastHunt && (now - new Date(profile.lastHunt)) < CONFIG.COOLDOWN_TIME) {
+                await transaction.rollback(); releaseLock(user.id);
+                return interaction.editReply('❌ Kamu lelah, istirahat sejenak!');
+            }
 
-    let curHp1 = stats1.maxHp;
-    let curHp2 = stats2.maxHp;
+            profile.lastHunt = now; await profile.save({ transaction });
+            await transaction.commit(); releaseLock(user.id);
 
-    let pertarunganLogs = [];
-    pertarunganLogs.push(`🎭 **PERMAINAN DIMULAI!**\n• P1: **${ksatria1.pokemonName}** (Lv.${ksatria1.level})\n• P2: **${ksatria2.pokemonName}** (Lv.${ksatria2.level})\n──────────────────`);
+            const pKeys = Object.keys(POKEDEX);
+            const rKey = pKeys[Math.floor(Math.random() * pKeys.length)];
+            const wild = POKEDEX[rKey];
+            const wLv = Math.floor(Math.random() * 20) + 5;
+            const isShinyWild = Math.random() < 0.05; // 5% chance hunt shiny
 
-    const moveList1 = POKEMON_DB[ksatria1.pokemonName]?.moves || ['Tackle'];
-    const moveList2 = POKEMON_DB[ksatria2.pokemonName]?.moves || ['Tackle'];
+            const token = crypto.randomBytes(3).toString('hex');
+            ACTIVE_SPAWNS.set(user.id, { token, pokeId: parseInt(rKey), name: wild.name, level: wLv, isShiny: isShinyWild, catchRate: wild.catchRate });
 
-    let turnCount = 1;
-    while (curHp1 > 0 && curHp2 > 0 && turnCount <= 6) {
-        pertarunganLogs.push(`[🥊 **ROUND ${turnCount}**]`);
-        
-        let moveP1 = moveList1[Math.floor(Math.random() * moveList1.length)];
-        let moveMeta1 = MOVE_DATA[moveP1] || { power: 40, type: 'Normal' };
-        let efektivitas1 = getTypeEffectiveness(moveMeta1.type, POKEMON_DB[ksatria2.pokemonName]?.type);
-        let kalkulasiKerusakan1 = Math.floor((((ksatria1.level * 0.4 + 2) * stats1.attack * moveMeta1.power) / (stats2.defense || 1)) / 50) + 2;
-        kalkulasiKerusakan1 = Math.floor(kalkulasiKerusakan1 * efektivitas1);
-        
-        curHp2 -= kalkulasiKerusakan1;
-        pertarunganLogs.push(`• **${ksatria1.pokemonName}** meluncurkan *${moveP1}*! Mengoyak \`${kalkulasiKerusakan1}\` HP lawan. ${efektivitas1 > 1 ? '🎯 Super efektif!' : ''}`);
+            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`c_${token}`).setLabel('Lempar Pokeball').setStyle(ButtonStyle.Success));
+            const msg = await interaction.editReply({ content: `🌳 Kamu bertemu **${isShinyWild ? '✨ ' : ''}Wild ${wild.name}** (Lv. ${wLv})!`, components: [row] });
 
-        if (curHp2 <= 0) break;
+            const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 15000 });
+            collector.on('collect', async b => {
+                if (b.user.id !== user.id) return b.reply({ content: 'Bukan berburumu!', ephemeral: true });
+                await b.deferUpdate(); collector.stop();
 
-        let moveP2 = moveList2[Math.floor(Math.random() * moveList2.length)];
-        let moveMeta2 = MOVE_DATA[moveP2] || { power: 40, type: 'Normal' };
-        let efektivitas2 = getTypeEffectiveness(moveMeta2.type, POKEMON_DB[ksatria1.pokemonName]?.type);
-        let kalkulasiKerusakan2 = Math.floor((((ksatria2.level * 0.4 + 2) * stats2.attack * moveMeta2.power) / (stats1.defense || 1)) / 50) + 2;
-        kalkulasiKerusakan2 = Math.floor(kalkulasiKerusakan2 * efektivitas2);
+                const c = ACTIVE_SPAWNS.get(user.id);
+                if (!c || c.token !== token) return interaction.followUp('Sesi kadaluwarsa.');
+                ACTIVE_SPAWNS.delete(user.id);
 
-        curHp1 -= kalkulasiKerusakan2;
-        pertarunganLogs.push(`• **${ksatria2.pokemonName}** membalas dengan *${moveP2}*! Menghantam \`${kalkulasiKerusakan2}\` HP. ${efektivitas2 > 1 ? '🎯 Super efektif!' : ''}`);
-        
-        turnCount++;
-    }
+                if (Math.random() * 255 <= c.catchRate + 100) {
+                    const lTx = await sequelize.transaction();
+                    const newPk = await PokemonInventory.create({ userId: user.id, pokemonId: c.pokeId, name: c.name, level: c.level, isShiny: c.isShiny }, { transaction: lTx });
+                    await UserProfile.increment({ caughtCount: 1 }, { where: { userId: user.id }, transaction: lTx });
+                    await lTx.commit();
+                    await executeDynamicRoleEngine(member);
+                    return interaction.followUp(`🎉 Berhasil ditangkap! **${c.name}** masuk ke tas dengan database ID: \`#${newPk.id}\`.`);
+                } else {
+                    return interaction.followUp(`💨 Oh tidak! **${c.name}** melarikan diri!`);
+                }
+            });
+        }
 
-    let sangPemenang = curHp2 <= 0 ? ksatria1 : ksatria2;
-    let pemenangId = curHp2 <= 0 ? p1Id : p2Id;
-    let nominalHadiahKoin = Math.floor(Math.random() * 100) + 100;
+        // [6] EVOLVE COMMAND
+        if (commandName === 'evolve') {
+            const uid = options.getInteger('id_unik');
+            const pk = await PokemonInventory.findOne({ where: { id: uid, userId: user.id }, transaction });
+            if (!pk) { await transaction.rollback(); releaseLock(user.id); return interaction.editReply('❌ Pokémon tidak ditemukan.'); }
 
-    sangPemenang.xp += 45;
-    let levelUpString = "";
-    if (sangPemenang.xp >= 100) {
-        sangPemenang.level += 1;
-        sangPemenang.xp = 0;
-        levelUpString = `\n🆙 **LEVEL UP!** **${sangPemenang.pokemonName}** naik menjangkau Level \`${sangPemenang.level}\`!`;
-    }
-    await sangPemenang.save();
+            const cfg = POKEDEX[pk.pokemonId];
+            if (!cfg || !cfg.evo) { await transaction.rollback(); releaseLock(user.id); return interaction.editReply('❌ Pokémon ini tidak bisa berevolusi lagi.'); }
+            if (pk.level < cfg.evo.level) { await transaction.rollback(); releaseLock(user.id); return interaction.editReply(`❌ Minimal Level \`${cfg.evo.level}\` untuk evolusi.`); }
 
-    const profilePemenang = await Profile.findOne({ where: { userId: pemenangId } });
-    if (profilePemenang) {
-        profilePemenang.coins += nominalHadiahKoin;
-        await profilePemenang.save();
-    }
+            const targetEvo = POKEDEX[cfg.evo.to];
+            pk.pokemonId = cfg.evo.to; pk.name = targetEvo.name;
+            await pk.save({ transaction });
+            await transaction.commit(); releaseLock(user.id);
 
-    pertarunganLogs.push(`──────────────────\n🏆 **DUEL USAI!** Pemenangnya adalah <@${pemenangId}>!\n• Hadiah: \`+${nominalHadiahKoin} Koin\`\n• Poin Pengalaman: \`+45 XP\` ${levelUpString}`);
+            return interaction.editReply(`🧬 Wow! Pokémon kamu berevolusi menjadi **${pk.name}**!`);
+        }
 
-    const embedHasil = new EmbedBuilder()
-        .setTitle('⚔️ RIFT ARENA CHAMPIONSHIP LOG')
-        .setDescription(pertarunganLogs.join('\n').substring(0, 4000))
-        .setColor('#e53935');
+        // [7] DAILY COMMAND
+        if (commandName === 'daily') {
+            const now = new Date();
+            if (profile.lastDaily && (now - new Date(profile.lastDaily)) < 86400000) {
+                await transaction.rollback(); releaseLock(user.id);
+                return interaction.editReply('❌ Tunjangan harian sudah kamu ambil hari ini.');
+            }
+            profile.credits = parseInt(profile.credits) + 1500;
+            profile.lastDaily = now;
+            await profile.save({ transaction });
+            await transaction.commit(); releaseLock(user.id);
+            return interaction.editReply('💰 Kamu menerima jatah harian sebesar **1500 Credits**!');
+        }
 
-    return selectInter.editReply({ embeds: [embedHasil], components: [] });
-});
+        // [8] TRADE COMMAND
+        if (commandName === 'trade') {
+            const partner = options.getUser('partner');
+            const myId = options.getInteger('id_kamu');
+            if (partner.id === user.id) { await transaction.rollback(); releaseLock(user.id); return interaction.editReply('❌ Tidak bisa trade mandiri.'); }
 
-// =========================================================================
-// 💻 WEBPANEL MONITORING DASHBOARD INTERFACE
-// =========================================================================
-app.get('/', async (req, res) => {
-    try {
-        const totalPemain = await Profile.count();
-        const totalMonster = await Inventory.count();
-        
-        let templateHtml = `
-        <!DOCTYPE html>
-        <html lang="id">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Rift Hyper Engine Control Panel v4</title>
-            <style>
-                body { background-color: #0d0e12; color: #e2e8f0; font-family: sans-serif; padding: 30px; margin: 0; }
-                .container { max-width: 1200px; margin: 0 auto; }
-                header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e293b; padding-bottom: 20px; margin-bottom: 30px; }
-                h1 { color: #38bdf8; margin: 0; font-size: 28px; }
-                .status-badge { background: #10b981; color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; }
-                .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px; }
-                .stat-card { background: #1e293b; padding: 20px; border-radius: 12px; border-top: 4px solid #38bdf8; }
-                .stat-card h3 { margin: 0 0 10px 0; color: #94a3b8; font-size: 14px; text-transform: uppercase; }
-                .stat-card p { margin: 0; font-size: 22px; font-weight: 600; color: #f8fafc; }
-                .stat-card span { color: #38bdf8; }
-                .log-section { background: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; }
-                .terminal-box { background: #000000; color: #34d399; padding: 20px; height: 350px; overflow-y: auto; font-family: monospace; border-radius: 8px; font-size: 14px; }
-                .log-row { border-bottom: 1px solid #121b2c; padding: 6px 0; }
-            </style>
-            <script>setInterval(() => { window.location.reload(); }, 15000);</script>
-        </head>
-        <body>
-            <div class="container">
-                <header>
-                    <div>
-                        <h1>⚡ Pokémon Rift Mega Engine v4</h1>
-                        <p style="margin: 5px 0 0 0; color: #64748b;">Enterprise Live Tracking Terminal Systems</p>
-                    </div>
-                    <div class="status-badge">Cluster Active</div>
-                </header>
-                <div class="dashboard-grid">
-                    <div class="stat-card">
-                        <h3>Kondisi Event Global</h3>
-                        <p><span>🎉 Event:</span> ${ACTIVE_EVENT.name}</p>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Statistik Data Infrastruktur</h3>
-                        <p>👥 Total Pemain: <span>${totalPemain} User</span></p>
-                        <p>🐉 Total Pokémon: <span>${totalMonster} Ekor</span></p>
-                    </div>
-                </div>
-                <div class="log-section">
-                    <h3 style="color: #fbbf24;">📜 INTERNAL LIVE TRAFFIC LOGS</h3>
-                    <div class="terminal-box">
-                        ${serverLogs.length === 0 ? '<div>> Menunggu instruksi data...</div>' : serverLogs.map(logLine => `<div class="log-row">> ${logLine}</div>`).join('')}
-                    </div>
-                </div>
-            </div>
-        </body>
-        </html>`;
-        
-        res.setHeader('Content-Type', 'text/html');
-        return res.send(templateHtml);
+            const myPk = await PokemonInventory.findOne({ where: { id: myId, userId: user.id }, transaction });
+            if (!myPk) { await transaction.rollback(); releaseLock(user.id); return interaction.editReply('❌ ID Pokémon kamu salah.'); }
+            await transaction.commit(); releaseLock(user.id);
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`ta_${user.id}`).setLabel('Terima Barter').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`td_${user.id}`).setLabel('Tolak').setStyle(ButtonStyle.Danger)
+            );
+            const msg = await interaction.editReply({ content: `🤝 <@${partner.id}>, <@${user.id}> mengajak barter **${myPk.name}** (Lv. ${myPk.level}). Ambil?`, components: [row] });
+
+            const col = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 30000 });
+            col.on('collect', async b => {
+                if (b.user.id !== partner.id) return b.reply({ content: 'Bukan partner terpilih!', ephemeral: true });
+                await b.deferUpdate(); col.stop();
+                if (b.customId.startsWith('ta')) {
+                    await PokemonInventory.update({ userId: partner.id }, { where: { id: myId } });
+                    const pMem = await guild.members.fetch(partner.id);
+                    await executeDynamicRoleEngine(member); await executeDynamicRoleEngine(pMem);
+                    return interaction.editReply({ content: `🎉 Barter sukses! **${myPk.name}** dikirim ke <@${partner.id}>!`, components: [] });
+                } else {
+                    return interaction.editReply({ content: '❌ Barter ditolak.', components: [] });
+                }
+            });
+        }
+
+        // [9] BATTLE ENGINE COMMAND (PvP & Raid Boss)
+        if (commandName === 'battle') {
+            const sub = options.getSubcommand();
+            const id_p = options.getInteger('id_poke');
+            const pk = await PokemonInventory.findOne({ where: { id: id_p, userId: user.id }, transaction });
+            if (!pk) { await transaction.rollback(); releaseLock(user.id); return interaction.editReply('❌ Pokémon tidak ditemukan.'); }
+
+            if (sub === 'single') {
+                const lawan = options.getUser('lawan');
+                if (lawan.id === user.id) { await transaction.rollback(); releaseLock(user.id); return interaction.editReply('❌ Tidak bisa melawan diri sendiri.'); }
+                const lawPk = await PokemonInventory.findOne({ where: { userId: lawan.id }, order: [['level', 'DESC']], transaction });
+                if (!lawPk) { await transaction.rollback(); releaseLock(user.id); return interaction.editReply('❌ Lawan belum punya Pokémon.'); }
+                await transaction.commit(); releaseLock(user.id);
+
+                let p1Hp = pk.level * 20 + pk.ivHp, p2Hp = lawPk.level * 20 + lawPk.ivHp;
+                let log = `⚔️ **STADIUM PVP** ⚔️\n\n`;
+                while (p1Hp > 0 && p2Hp > 0) {
+                    let d1 = Math.floor((pk.level * 4) * (1 + pk.ivAtk / 31)); p2Hp -= d1;
+                    log += `💥 **${pk.name}** menyerang! Memukul \`${d1} DMG\` (HP Lawan: ${Math.max(0, p2Hp)})\n`;
+                    if (p2Hp <= 0) break;
+                    let d2 = Math.floor((lawPk.level * 4) * (1 + lawPk.ivAtk / 31)); p1Hp -= d2;
+                    log += `💥 **${lawPk.name}** membalas! Memukul \`${d2} DMG\` (HP Anda: ${Math.max(0, p1Hp)})\n`;
+                }
+                log += `\n🏆 Juara Arena: <@${p1Hp > 0 ? user.id : lawan.id}>!`;
+                return interaction.editReply({ embeds: [new EmbedBuilder().setDescription(log).setColor('#e67e22')] });
+            }
+
+            if (sub === 'boss') {
+                await transaction.commit(); releaseLock(user.id);
+                let bHp = 2500;
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ba').setLabel('SERANG BERSAMA').setStyle(ButtonStyle.Danger));
+                const emb = new EmbedBuilder().setTitle('👹 WORLD RAID BOSS: MEWTWO').setDescription(`HP Boss: \`${bHp}/2500\`\n\n*Semua pemain di server bisa menekan tombol di bawah untuk menyerang!*`).setColor('#9b59b6');
+                const msg = await interaction.editReply({ embeds: [emb], components: [row] });
+
+                const col = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 40000 });
+                col.on('collect', async b => {
+                    await b.deferUpdate();
+                    const uTeam = await UserProfile.findOne({ where: { userId: b.user.id } });
+                    let bonus = uTeam && uTeam.team === 'valor' ? 1.5 : 1.0; // Bonus attack tim Valor
+
+                    let dmg = Math.floor((Math.random() * 100 + 50) * bonus);
+                    bHp -= dmg;
+                    if (bHp <= 0) {
+                        col.stop(); return interaction.followUp(`🎉 **BOSS KALAH!** <@${b.user.id}> menumbangkan boss dengan damage terakhir \`${dmg} DMG\`!`);
+                    } else {
+                        await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('👹 RAID BOSS IN PROGRESS').setDescription(`HP Boss: \`${bHp}/2500\`\nTerakhir disabet oleh <@${b.user.id}> sebesar \`${dmg} DMG\`!`).setColor('#9b59b6')] });
+                    }
+                });
+            }
+        }
+
     } catch (err) {
-        return res.status(500).send("Gagal mengompilasi Web-Panel: " + err.message);
+        if (transaction.finished !== 'commit') await transaction.rollback();
+        releaseLock(user.id);
+        console.error(err);
+        return interaction.editReply('❌ Kegagalan kueri database internal.');
     }
 });
 
-app.listen(PORT, () => {
-    logToWeb(`[SYS] Express Web Server diaktifkan pada Port *:${PORT}`);
-});
-client.login(process.env.DISCORD_TOKEN);
+client.login(CONFIG.TOKEN);
